@@ -1,4 +1,4 @@
-'use client'
+'use client';
 import { Logo } from '@/lib/components/Logo';
 import Image from 'next/image';
 import React from 'react';
@@ -7,9 +7,11 @@ import SignupAutoSlider from './signup-auto-slider';
 import CustomText from '@/lib/components/CustomText';
 import AccountSelectionForm from './components/AccountSelectionForm';
 import useCreateAccountModel from './model/useCreateAccountModel';
+import CreateIndividualAccountForm from './components/CreateIndividualAccountForm';
+import CreateBusinessAccountForm from './components/CreateBusinessAccountForm';
 
 const CreateAccount = () => {
-  const { activeCard, setActiveCard } = useCreateAccountModel();
+  const { activeCard, setActiveCard, step, setStep } = useCreateAccountModel();
 
   return (
     <main className="grid grid-cols-[4fr_7fr] h-screen">
@@ -20,7 +22,21 @@ const CreateAccount = () => {
       </section>
 
       <section className="w-full h-full flex flex-col items-center justify-center">
-        <AccountSelectionForm activeCard={activeCard} setActiveCard={setActiveCard} />
+        {step === 0 ? (
+          <AccountSelectionForm
+            activeCard={activeCard}
+            setActiveCard={setActiveCard}
+            setStep={setStep}
+          />
+        ) : step === 1 ? (
+          <>
+            {activeCard === 'individual' ? (
+              <CreateIndividualAccountForm setStep={setStep} />
+            ) : (
+              <CreateBusinessAccountForm setStep={setStep} />
+            )}
+          </>
+        ) : null}
         {/* already have an account ---- text */}
         <span className="mt-1 flex gap-0.5 items-center">
           <CustomText

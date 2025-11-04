@@ -22,9 +22,13 @@ export const accountTypeOptions: {
 const useCreateAccountModel = () => {
   const [activeCard, setActiveCard] = useState<AccountType | null>(null);
 
+  const [step, setStep] = useState<number>(0);
+
   return {
     activeCard,
     setActiveCard,
+    step,
+    setStep,
   };
 };
 export type UseCreateAccountModel = ReturnType<typeof useCreateAccountModel>;

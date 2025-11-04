@@ -10,9 +10,14 @@ import { AccountType } from '@/lib/states/accounts/accounts';
 interface AccountSelectionFormProps {
   activeCard: AccountType | null;
   setActiveCard: (card: AccountType) => void;
+  setStep: (value: number) => void;
 }
 
-const AccountSelectionForm = ({ activeCard, setActiveCard }: AccountSelectionFormProps) => {
+const AccountSelectionForm = ({
+  activeCard,
+  setActiveCard,
+  setStep,
+}: AccountSelectionFormProps) => {
   return (
     <div className="max-w-[557px] h-fit">
       <CustomHeading
@@ -38,7 +43,16 @@ const AccountSelectionForm = ({ activeCard, setActiveCard }: AccountSelectionFor
           />
         ))}
       </div>
-      <CustomButton text="Continue" disabled={!activeCard} onClick={() => {}} />
+      <CustomButton
+        text="Continue"
+        disabled={!activeCard || activeCard === null}
+        onClick={() => {
+          if (activeCard === null) {
+            return;
+          }
+          setStep(1);
+        }}
+      />
     </div>
   );
 };
