@@ -120,3 +120,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+.text_input{
+  height: 40px;
+}
+
+.text_input::placeholder {
+  color: #99A0AE;
+}
