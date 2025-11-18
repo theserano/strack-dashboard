@@ -22,3 +22,16 @@ export const showToast = ({
     descriptionClassName: '!text-[#99A0AE]',
   });
 };
+
+export const truncateText = ({
+  text,
+  length = 35,
+  readMore = '...',
+}: {
+  text: string;
+  length?: number;
+  readMore?: string;
+  }) => {
+  console.log(text);
+  return `${text?.substring(0, length).trim()}${text?.length <= length ? '' : readMore}`;
+};

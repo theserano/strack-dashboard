@@ -14,14 +14,18 @@ const CreateAccount = () => {
   const { activeCard, setActiveCard, step, setStep } = useCreateAccountModel();
 
   return (
-    <main className="grid grid-cols-[4fr_7fr] h-screen">
-      <section className="bg-[#F7F9FC] w-full h-full p-6 relative flex flex-col justify-between">
+    <main className="flex flex-col lg:grid lg:grid-cols-[4fr_7fr] lg:h-screen">
+      <section className="bg-[#F7F9FC] w-full h-fit md:h-[300px] lg:h-full p-6 relative flex flex-col justify-between">
         <Logo />
-        <Image src={WhiteSpiral} alt="White Spiral" className="absolute bottom-0 right-0 top-0" />
+        <Image
+          src={WhiteSpiral}
+          alt="White Spiral"
+          className="hidden md:block md:absolute bottom-0 right-0 top-0"
+        />
         <SignupAutoSlider />
       </section>
 
-      <section className="w-full h-full flex flex-col items-center justify-center">
+      <section className="w-full h-full flex flex-col items-center justify-center mt-16 lg:mt-0 px-4">
         {step === 0 ? (
           <AccountSelectionForm
             activeCard={activeCard}

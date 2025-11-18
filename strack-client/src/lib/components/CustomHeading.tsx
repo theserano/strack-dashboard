@@ -1,40 +1,32 @@
 import React from 'react';
 
+type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5';
+
 type Props = {
   value: string;
-  type: 'h1' | 'h2' | 'h3' | 'h4' | 'h5';
+  type: HeadingLevel;
   styleProps?: React.CSSProperties;
+  className?: string;
 };
 
-const CustomHeading = ({ value, type, styleProps }: Props) => {
+const sizeMap: Record<HeadingLevel, string> = {
+  h1: 'text-3xl lg:text-4xl',
+  h2: 'text-2xl lg:text-3xl',
+  h3: 'text-xl lg:text-2xl',
+  h4: 'text-lg lg:text-xl',
+  h5: 'text-base lg:text-lg',
+};
+
+const CustomHeading = ({ value, type, styleProps, className }: Props) => {
+  const Tag = type;
+
   return (
-    <>
-      {type === 'h1' && (
-        <h1 style={styleProps} className="text-[#101928] text-4xl">
-          {value}
-        </h1>
-      )}
-      {type === 'h2' && (
-        <h2 style={styleProps} className="text-[#101928] text-3xl">
-          {value}
-        </h2>
-      )}
-      {type === 'h3' && (
-        <h3 style={styleProps} className="text-[#101928] text-2xl">
-          {value}
-        </h3>
-      )}
-      {type === 'h4' && (
-        <h4 style={styleProps} className="text-[#101928] text-xl">
-          {value}
-        </h4>
-      )}
-      {type === 'h5' && (
-        <h5 style={styleProps} className="text-[#101928] text-lg">
-          {value}
-        </h5>
-      )}
-    </>
+    <Tag
+      style={styleProps}
+      className={`text-[#101928] font-semibold leading-tight ${sizeMap[type]} ${className || ''}`}
+    >
+      {value}
+    </Tag>
   );
 };
 

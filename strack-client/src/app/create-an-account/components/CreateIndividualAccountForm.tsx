@@ -109,7 +109,7 @@ const CreateIndividualAccountForm = ({ setStep }: Props) => {
         className="mt-8 w-full flex flex-col gap-5"
         onSubmit={(event) => handleFormSubmission(event)}
       >
-        <section className="flex gap-3 items-center">
+        <section className="flex flex-col md:flex-row gap-3 items-center">
           <CustomInput
             id="firstName"
             value={firstName}

@@ -41,7 +41,7 @@ export default function SignupAutoSlider() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center gap-40 bg-gray-50 text-center px-6">
+    <div className="hidden lg:flex flex-col items-center justify-center gap-40 bg-gray-50 text-center px-6">
       <div className="max-w-xl">
         <AnimatePresence mode="wait">
           <motion.div
