@@ -42,47 +42,9 @@ const Login = () => {
     const isValid = isValidInput();
     if (!isValid) return;
 
-    const individualData = localStorage.getItem('individualCreationObject');
-    const businessData = localStorage.getItem('businessCreationObject');
+    const accountType = localStorage.getItem('accountType') || 'individual';
 
-    const individual = individualData ? JSON.parse(individualData) : null;
-    const business = businessData ? JSON.parse(businessData) : null;
-
-    let matchedAccount = null;
-
-    if (individual && individual.email === email && individual.password === password) {
-      matchedAccount = individual;
-    } else if (business && business.email === email && business.password === password) {
-      matchedAccount = business;
-    }
-
-    if (matchedAccount) {
-      showToast({
-        message: 'Login Successful',
-        description: `Welcome back, ${matchedAccount.firstName}!`,
-        icon: <CheckCheck />,
-        onAutoClose: () => {
-          // Example redirect depending on account type
-          if (matchedAccount.businessName) {
-            // Business account
-            // router.push('/dashboard/business');
-          } else {
-            // Individual account
-            // router.push('/dashboard/individual');
-          }
-        },
-      });
-    } else {
-      showToast({
-        message: 'Login Failed',
-        description: 'Invalid email or password. Please try again.',
-        icon: <CheckCheck color="red" />,
-      });
-      setErrors({
-        email: true,
-        password: true,
-      });
-    }
+    
   };
 
   return (

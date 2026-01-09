@@ -11,6 +11,8 @@ import { Label } from '../../../../@/components/ui/label';
 import CustomButton from '@/lib/components/CustomButton';
 import { showToast } from '@/lib/utils/plainFunctions';
 import { useRouter } from 'next/navigation';
+import { useAppDispatch } from '@/lib/hook';
+import { signUpUser } from '@/lib/features/auth/thunkActions';
 
 type Props = {
   setStep: (value: number) => void;
@@ -25,6 +27,7 @@ const CreateIndividualAccountForm = ({ setStep }: Props) => {
   const [checked, setChecked] = useState<boolean>(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const handlePhoneInput = (value: string) => {
     const onlyNum = value.replace(/[^0-9]/g, '');
@@ -68,26 +71,35 @@ const CreateIndividualAccountForm = ({ setStep }: Props) => {
     event.preventDefault();
     const isValid = isValidInput();
     if (!isValid) return;
+    localStorage.setItem('accountType', 'individual');
 
-    localStorage.setItem(
-      'individualCreationObject',
-      JSON.stringify({
-        firstName,
-        lastName,
-        email,
-        phone,
-        password,
-        checked,
+    dispatch(
+      signUpUser({
+        values: {
+          firstName,
+          lastName,
+          email,
+          phone,
+          password,
+          accountType: 'individual',
+        },
+        onSuccess: () => {
+          showToast({
+            message: 'Successful',
+            description: 'Individual account created',
+            onAutoClose: () => {
+              router.push('/dashboard/compliance');
+            },
+          });
+        },
+        onFailure: () => {
+          showToast({
+            message: 'Error',
+            description: 'Failed to create individual account',
+          });
+        },
       })
     );
-    showToast({
-      message: 'Successful',
-      description: 'Individual account created',
-      icon: <CheckCheck />,
-      onAutoClose: () => {
-        router.push('/login');
-      },
-    });
   };
 
   return (

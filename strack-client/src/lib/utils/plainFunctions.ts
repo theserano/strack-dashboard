@@ -32,6 +32,5 @@ export const truncateText = ({
   length?: number;
   readMore?: string;
   }) => {
-  console.log(text);
   return `${text?.substring(0, length).trim()}${text?.length <= length ? '' : readMore}`;
 };

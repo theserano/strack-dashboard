@@ -1,3 +1,4 @@
+'use client';
 import CustomHeading from '@/lib/components/CustomHeading';
 import React, { useState } from 'react';
 import { Button } from '../../../../@/components/ui/button';
@@ -8,9 +9,10 @@ import PasswordInput from '@/lib/components/PasswordInput';
 import CustomInput from '@/lib/components/CustomInput';
 import { Checkbox } from '../../../../@/components/ui/checkbox';
 import { Label } from '../../../../@/components/ui/label';
-import { toast } from 'sonner';
 import { showToast } from '@/lib/utils/plainFunctions';
 import { useRouter } from 'next/navigation';
+import { signUpUser } from '@/lib/features/auth/thunkActions';
+import { useAppDispatch } from '@/lib/hook';
 
 type Props = {
   setStep: (value: number) => void;
@@ -27,6 +29,8 @@ const CreateBusinessAccountForm = ({ setStep }: Props) => {
   const [businessName, setBusinessName] = useState<string>('');
   const [businessEmail, setBusinessEmail] = useState<string>('');
   const router = useRouter();
+
+  const dispatch = useAppDispatch();
 
   const handlePhoneInput = (value: string) => {
     const onlyNum = value.replace(/[^0-9]/g, '');
@@ -69,31 +73,39 @@ const CreateBusinessAccountForm = ({ setStep }: Props) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleFormSubmission = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmission = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isValid = isValidInput();
     if (!isValid) return;
+    localStorage.setItem('accountType', 'business');
 
-    localStorage.setItem(
-      'businessCreationObject',
-      JSON.stringify({
+    dispatch(signUpUser({
+      values: {
         firstName,
         lastName,
         email,
         phone,
+        password,
+        accountType: 'business',
         businessName,
         businessEmail,
-        password,
-        checked,
-      })
-    );
-    showToast({
-      message: 'Successful',
-      description: 'Business account created',
-      onAutoClose: () => {
-        router.push('/login');
       },
-    });
+      onSuccess: () => {
+        showToast({
+          message: 'Successful',
+          description: 'Business account created',
+          onAutoClose: () => {
+            router.push('/dashboard/compliance');
+          },
+        });
+      },
+      onFailure: () => {
+        showToast({
+          message: 'Error',
+          description: 'Unable to create account',
+        });
+      },
+    }));
   };
 
   return (

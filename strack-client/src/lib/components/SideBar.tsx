@@ -101,7 +101,7 @@ const Sidebar = () => {
       <div>
         <Separator className="hidden lg:block" />
 
-        <div className="p-4 lg:p-6 flex items-center justify-center lg:justify-start gap-3">
+        <div className="p-4 lg:p-6 flex items-center justify-center lg:justify-start gap-3"> 
           <Avatar className="h-10 w-10">
             <AvatarImage src="https://github.com/shadcn.png" alt="Emmanuel Edward" />
             <AvatarFallback className="bg-primary text-primary-foreground">ZS</AvatarFallback>
