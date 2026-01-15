@@ -5,10 +5,18 @@ import { Separator } from '../../../@/components/ui/separator';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Logo } from './Logo';
-import { truncateText } from '../utils/plainFunctions';
+import { showToast, truncateText } from '../utils/plainFunctions';
+import { useRouter } from 'next/navigation';
+import { useAppDispatch, useAppSelector } from '../hook';
+import { logoutUser } from '../features/auth/thunkActions';
+import { Loader2 } from 'lucide-react';
+import { tokenManager } from '../utils/auth';
 
 const Sidebar = () => {
   const pathname = usePathname();
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { isLoggingOut } = useAppSelector((state) => state.auth);
 
   return (
     <div
@@ -76,10 +84,51 @@ const Sidebar = () => {
               const active = pathname.startsWith(item.href);
 
               return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`
+                <div key={item.name}>
+                  {item.name === 'Logout' ? (
+                    <div
+                      key={item.href}
+                      className={`
+                    flex items-center gap-0 lg:gap-3 
+                    p-2 lg:px-3 lg:py-2.5 text-sm
+                    justify-center lg:justify-start
+                    text-foreground/70 hover:bg-accent hover:text-accent-foreground 
+                    transition-colors rounded-lg cursor-pointer
+                    ${active && 'bg-accent text-accent-foreground font-medium'}
+                  `}
+                      onClick={() => {
+                        dispatch(
+                          logoutUser({
+                            onFailure: (error) => {
+                              showToast({
+                                message: 'Failed ',
+                                description: 'Logout failed. Please try again.',
+                              });
+                            },
+                            onSuccess: () => {
+                              showToast({
+                                message: 'Success',
+                                description: 'You have been logged out successfully.',
+                              });
+                              tokenManager.clear();
+                              router.push(item.href);
+                            },
+                          })
+                        );
+                      }}
+                    >
+                      {isLoggingOut ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Icon className="h-5 w-5" strokeWidth={1.5} />
+                      )}
+                      <span className="hidden lg:inline-block">{item.name}</span>
+                    </div>
+                  ) : (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`
                     flex items-center gap-0 lg:gap-3 
                     p-2 lg:px-3 lg:py-2.5 text-sm
                     justify-center lg:justify-start
@@ -87,10 +136,12 @@ const Sidebar = () => {
                     transition-colors rounded-lg
                     ${active && 'bg-accent text-accent-foreground font-medium'}
                   `}
-                >
-                  <Icon className="h-5 w-5" strokeWidth={1.5} />
-                  <span className="hidden lg:inline-block">{item.name}</span>
-                </Link>
+                    >
+                      <Icon className="h-5 w-5" strokeWidth={1.5} />
+                      <span className="hidden lg:inline-block">{item.name}</span>
+                    </Link>
+                  )}
+                </div>
               );
             })}
           </nav>
@@ -101,7 +152,7 @@ const Sidebar = () => {
       <div>
         <Separator className="hidden lg:block" />
 
-        <div className="p-4 lg:p-6 flex items-center justify-center lg:justify-start gap-3"> 
+        <div className="p-4 lg:p-6 flex items-center justify-center lg:justify-start gap-3">
           <Avatar className="h-10 w-10">
             <AvatarImage src="https://github.com/shadcn.png" alt="Emmanuel Edward" />
             <AvatarFallback className="bg-primary text-primary-foreground">ZS</AvatarFallback>

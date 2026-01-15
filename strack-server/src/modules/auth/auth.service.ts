@@ -76,14 +76,11 @@ export const signupService = async (data: signUpRequest) => {
 
 export const loginService = async (data: loginRequest) => {
   try {
-    const { email, password, accountType } = data;
+    const { email, password } = data;
     let user: BaseUser | null;
 
-    if (accountType === 'business') {
-      user = await BusinessUserModel.findOne({ email });
-    } else {
-      user = await IndividualUserModel.findOne({ email });
-    }
+    user = await UserModel.findOne({ email });
+
     const userPassword = user?.password || '';
     const isPasswordValid = await bcrypt.compare(password, userPassword);
 
@@ -99,7 +96,6 @@ export const loginService = async (data: loginRequest) => {
     throw error;
   }
 };
-
 
 export const refreshTokenService = async (refreshToken: string) => {
   if (!refreshToken) {
@@ -122,3 +118,10 @@ export const refreshTokenService = async (refreshToken: string) => {
   return { accessToken: newAccessToken };
 };
 
+export const logoutService = async (refreshToken: string) => {
+  if (!refreshToken) {
+    throw new Error('No refresh token provided');
+  }
+
+  return;
+};

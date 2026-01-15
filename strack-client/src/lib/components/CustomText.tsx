@@ -8,6 +8,7 @@ type Props = {
   styleProps?: React.CSSProperties;
   className?: string;
   onClick?: () => void;
+  isClickable?: boolean;
 };
 
 const sizeMap: Record<TextSize, string> = {
@@ -17,12 +18,12 @@ const sizeMap: Record<TextSize, string> = {
   xl: 'text-lg md:text-xl lg:text-xl',
 };
 
-const CustomText = ({ value, type, styleProps, onClick, className }: Props) => {
+const CustomText = ({ value, type, styleProps, onClick, className, isClickable }: Props) => {
   return (
     <p
       onClick={onClick}
       style={styleProps}
-      className={`text-[#525866] ${sizeMap[type]} ${className || ''}`}
+      className={`text-[#525866] ${sizeMap[type]} ${className || ''} ${isClickable && `hover:!text-[#2b332c]`}`}
     >
       {value}
     </p>

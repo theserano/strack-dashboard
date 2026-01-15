@@ -15,5 +15,4 @@ export const signupSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
   password: z.string().min(8),
-  accountType: z.enum(["individual", "business"]),
 });

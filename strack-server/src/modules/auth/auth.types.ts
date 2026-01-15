@@ -14,5 +14,4 @@ export interface signUpRequest {
 export interface loginRequest {
     email: string;
     password: string;
-    accountType: 'individual' | 'business';
 }

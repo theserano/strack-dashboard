@@ -9,9 +9,11 @@ import AccountSelectionForm from './components/AccountSelectionForm';
 import useCreateAccountModel from './model/useCreateAccountModel';
 import CreateIndividualAccountForm from './components/CreateIndividualAccountForm';
 import CreateBusinessAccountForm from './components/CreateBusinessAccountForm';
+import { useRouter } from 'next/navigation';
 
 const CreateAccount = () => {
   const { activeCard, setActiveCard, step, setStep } = useCreateAccountModel();
+  const router = useRouter();
 
   return (
     <main className="flex flex-col lg:grid lg:grid-cols-[4fr_7fr] lg:h-screen">
@@ -53,6 +55,8 @@ const CreateAccount = () => {
             type="md"
             value="Login here"
             styleProps={{ color: '#667185', cursor: 'pointer' }}
+            onClick={() => router.push(`/login`)}
+            isClickable
           />
         </span>
       </section>

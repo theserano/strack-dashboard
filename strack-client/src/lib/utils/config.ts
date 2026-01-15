@@ -1,5 +1,4 @@
 import {
-  ShieldCheck,
   Users,
   Settings,
   Headphones,
@@ -9,12 +8,13 @@ import {
   BanknoteArrowDown,
   LayoutGrid,
   NotepadTextDashed,
+  LogOut,
 } from 'lucide-react';
 
 type NavItem = {
-    name: string;
-    href: string;
-    icon: React.ElementType;
+  name: string;
+  href: string;
+  icon: React.ElementType;
 };
 
 export const mainNav: NavItem[] = [
@@ -28,6 +28,11 @@ export const mainNav: NavItem[] = [
 ];
 
 export const otherNav: NavItem[] = [
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-    { name: 'Support', href: '/dashboard/support', icon: Headphones },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  { name: 'Support', href: '/dashboard/support', icon: Headphones },
+  {
+    name: 'Logout',
+    href: '/login',
+    icon: LogOut,
+  },
 ];

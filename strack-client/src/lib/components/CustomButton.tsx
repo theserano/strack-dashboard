@@ -1,6 +1,6 @@
 import React, { ReactElement } from 'react';
 import { Button } from '../../../@/components/ui/button';
-import { LucideProps } from 'lucide-react';
+import { Loader2, LucideProps } from 'lucide-react';
 
 type Props = {
   text: string;
@@ -9,9 +9,18 @@ type Props = {
   icon?: ReactElement;
   className?: string;
   type?: 'submit' | 'button' | 'reset' | undefined;
+  isLoading?: boolean;
 };
 
-const CustomButton = ({ text, onClick, disabled, icon, className, type = 'button' }: Props) => {
+const CustomButton = ({
+  text,
+  onClick,
+  disabled,
+  icon,
+  className,
+  type = 'button',
+  isLoading,
+}: Props) => {
   return (
     <Button
       onClick={onClick}
@@ -19,7 +28,7 @@ const CustomButton = ({ text, onClick, disabled, icon, className, type = 'button
       className={`w-full h-12 ${disabled ? 'bg-[#E1E4EA] text-[#667185]' : 'bg-[#020C14] text-[#fff]'} text-[16px] rounded-lg disabled:cursor-not-allowed ${className}`}
       type={type}
     >
-      {icon && icon}
+      {isLoading ? <Loader2 className="animate-spin" /> : icon ? icon : null}
       {text}
     </Button>
   );
