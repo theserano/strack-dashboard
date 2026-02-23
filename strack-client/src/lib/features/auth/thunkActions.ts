@@ -3,6 +3,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { User } from '../user/thunkActions';
 import api from '@/lib/utils/axios';
 import { AccountType } from '@/lib/states/accounts/accounts';
+import { setUser } from '../user/slice';
 
 interface signUpDataArgs extends ReduxAction {
   values: {
@@ -30,6 +31,7 @@ export const signUpUser = createAsyncThunk(
     try {
       const response: signUpResponse = await api.post('/auth/signup', values);
       if (onSuccess) onSuccess(response.data);
+      setUser(response.data.user);
       return response.data;
     } catch (error) {
       if (onFailure) onFailure(error);
@@ -55,9 +57,10 @@ export interface loginResponse {
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async ({ values, onFailure, onSuccess }: loginDataArgs, { rejectWithValue }) => {
-      try {
+    try {
       const response: loginResponse = await api.post('/auth/login', values);
       if (onSuccess) onSuccess(response.data);
+      setUser(response.data.user);
       return response.data;
     } catch (error) {
       if (onFailure) onFailure(error);

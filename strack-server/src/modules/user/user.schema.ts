@@ -1,4 +1,3 @@
-import { signUpRequest } from  "../auth/auth.types";
 import { Schema, model, Document } from "mongoose";
 
 export interface BaseUser extends Document {
