@@ -1,15 +1,1 @@
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "outDir": "./dist",
-    "rootDir": "./",
-    "baseUrl": "./",
-    "strict": true
-  },
-  "include": ["./**/*.ts", "./**/*.json", "src/utils/express.d.ts"],
-  "exclude": ["dist", "node_modules"]
-}
+{\n  "compilerOptions": {\n    "types": ["node"],\n    "target": "es5",\n    "module": "commonjs",\n    "strict": true,\n    "esModuleInterop": true,\n    "skipLibCheck": true,\n    "forceConsistentCasingInFileNames": true\n  },\n  "include": [ "**/*.ts" ],\n  "exclude": [ "node_modules" ]\n}
