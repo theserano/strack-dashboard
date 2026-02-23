@@ -1,1 +1,17 @@
-{\n  "compilerOptions": {\n    "target": "ES2022",\n    "module": "CommonJS",\n    "moduleResolution": "node",\n    "outDir": "./dist",\n    "strict": true,\n    "esModuleInterop": true,\n    "allowSyntheticDefaultImports": true,\n    "baseUrl": "./",\n    "rootDir": "./",\n    "types": ["node"],\n    "skipLibCheck": true\n  }\n}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "outDir": "./dist",
+    "rootDir": "./",
+    "baseUrl": "./",
+    "strict": true,
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": ["./**/*.ts", "./**/*.json"],
+  "exclude": ["dist", "node_modules"]
+}
