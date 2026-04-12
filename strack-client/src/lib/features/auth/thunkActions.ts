@@ -4,6 +4,7 @@ import { User } from '../user/thunkActions';
 import api from '@/lib/utils/axios';
 import { AccountType } from '@/lib/states/accounts/accounts';
 import { setUser } from '../user/slice';
+import { tokenManager } from '@/lib/utils/auth';
 
 interface signUpDataArgs extends ReduxAction {
   values: {
@@ -18,20 +19,20 @@ interface signUpDataArgs extends ReduxAction {
   };
 }
 
-export interface signUpResponse {
-  data: {
-    user: User;
-    accessToken: string;
-  };
+export interface AuthResponseData {
+  user: User;
+  accessToken: string;
 }
 
 export const signUpUser = createAsyncThunk(
   'auth/signUpUser',
-  async ({ values, onFailure, onSuccess }: signUpDataArgs, { rejectWithValue }) => {
+  async ({ values, onFailure, onSuccess }: signUpDataArgs, { dispatch, rejectWithValue }) => {
     try {
-      const response: signUpResponse = await api.post('/auth/signup', values);
+      const response = await api.post('/auth/signup', values);
+      const { user, accessToken } = response.data.data as AuthResponseData;
+      tokenManager.set(accessToken);
+      dispatch(setUser(user));
       if (onSuccess) onSuccess(response.data);
-      setUser(response.data.user);
       return response.data;
     } catch (error) {
       if (onFailure) onFailure(error);
@@ -47,20 +48,15 @@ interface loginDataArgs extends ReduxAction {
   };
 }
 
-export interface loginResponse {
-  data: {
-    user: User;
-    accessToken: string;
-  };
-}
-
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
-  async ({ values, onFailure, onSuccess }: loginDataArgs, { rejectWithValue }) => {
+  async ({ values, onFailure, onSuccess }: loginDataArgs, { dispatch, rejectWithValue }) => {
     try {
-      const response: loginResponse = await api.post('/auth/login', values);
+      const response = await api.post('/auth/login', values);
+      const { user, accessToken } = response.data.data as AuthResponseData;
+      tokenManager.set(accessToken);
+      dispatch(setUser(user));
       if (onSuccess) onSuccess(response.data);
-      setUser(response.data.user);
       return response.data;
     } catch (error) {
       if (onFailure) onFailure(error);

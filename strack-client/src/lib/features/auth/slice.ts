@@ -1,5 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { loginUser, logoutUser, signUpResponse, signUpUser } from './thunkActions';
+import { loginUser, logoutUser, signUpUser } from './thunkActions';
 
 export const enum AccountType {
   INDIVIDUAL = 'individual',
@@ -10,7 +10,7 @@ export interface AuthState {
   isSigningUp?: boolean;
   isLoggingIn?: boolean;
   isLoggingOut?: boolean;
-  signUpData?: signUpResponse;
+  signUpData?: unknown;
 }
 
 export const initialAuthState: AuthState = {

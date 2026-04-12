@@ -1,5 +1,3 @@
-import { email } from 'zod/src/v4/core/regexes';
-
 export interface signUpRequest {
     firstName: string;
     lastName: string;

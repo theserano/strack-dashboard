@@ -13,5 +13,6 @@
     "skipLibCheck": true
   },
   "include": ["./**/*.ts", "./**/*.json"],
+  "files": ["src/utils/express.d.ts"],
   "exclude": ["dist", "node_modules"]
 }
