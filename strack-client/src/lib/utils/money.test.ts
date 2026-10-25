@@ -22,6 +22,16 @@ describe('toKobo', () => {
     expect(toKobo('₦1,234.50')).toBe(123450);
     expect(toKobo('9999999999.99')).toBe(999999999999);
   });
+  it('rejects amounts beyond the safe integer range', () => {
+    expect(() => toKobo('99999999999999999')).toThrow();
+  });
+  it('rejects exponent-form numbers and misplaced commas', () => {
+    expect(() => toKobo(1e21)).toThrow();
+    expect(() => toKobo(1e-7)).toThrow();
+    expect(() => toKobo('1,2,3')).toThrow();
+    expect(() => toKobo('12,34')).toThrow();
+    expect(toKobo('1,234')).toBe(123400);
+  });
   it('rejects garbage', () => {
     expect(() => toKobo('abc')).toThrow();
     expect(() => toKobo('')).toThrow();

@@ -20,8 +20,14 @@ export function fromKobo(kobo: number): number {
 
 /** "1,234.50" or 1234.5 -> 123450. Parses the decimal text so "0.29" gives 29, not 28.999. */
 export function toKobo(naira: string | number): number {
-  let text = typeof naira === 'number' ? naira.toFixed(10) : naira;
-  text = text.replace(/[₦,\s]/g, '');
+  let text = typeof naira === 'number' ? String(naira) : naira;
+  if (/e/i.test(text)) throw new Error(`Invalid amount: ${naira}`); // exponent form loses precision
+  text = text.replace(/[₦\s]/g, '');
+  // Commas are only allowed as thousands separators: "1,234,567.89", not "1,2,3".
+  if (text.includes(',')) {
+    if (!/^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(text)) throw new Error(`Invalid amount: ${naira}`);
+    text = text.replace(/,/g, '');
+  }
   const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(text);
   if (!match || (match[2] === '' && !match[3])) throw new Error(`Invalid amount: ${naira}`);
   const [, sign, whole, frac = ''] = match;
@@ -29,5 +35,7 @@ export function toKobo(naira: string | number): number {
   // Round half up on the third decimal digit.
   let kobo = Number(whole || '0') * 100 + Number(padded.slice(0, 2));
   if (Number(padded[2]) >= 5) kobo += 1;
-  return sign && kobo !== 0 ? -kobo : kobo;
+  const result = sign && kobo !== 0 ? -kobo : kobo;
+  if (!Number.isSafeInteger(result)) throw new Error(`Amount out of range: ${naira}`);
+  return result;
 }

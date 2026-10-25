@@ -38,6 +38,9 @@ export interface Transaction {
   customerId?: Id;
   paymentLinkId?: Id;
   payoutId?: Id;
+  note?: string;
+  /** Set on a refund (debit) transaction: the original transaction's id. */
+  refundOf?: Id;
 }
 
 export interface BankAccount {
@@ -100,6 +103,8 @@ export interface ListParams {
   /** ISO dates, inclusive range. */
   from?: IsoDate;
   to?: IsoDate;
+  sort?: string;
+  direction?: 'asc' | 'desc';
 }
 
 export interface ListResult<T> {
@@ -121,10 +126,20 @@ export interface Resource<T, C = CreateInput<T>, U = UpdateInput<T>> {
   remove(id: Id): Promise<void>;
 }
 
+import type { UpdateUserData, User, DocumentType } from '@/lib/features/user/thunkActions';
+
 export interface DataSource {
   customers: Resource<Customer, CreateInput<Customer, 'createdAt'>>;
-  paymentLinks: Resource<PaymentLink, CreateInput<PaymentLink, 'createdAt' | 'slug'>>;
-  transactions: Pick<Resource<Transaction>, 'list' | 'get'>;
+  paymentLinks: Resource<PaymentLink, CreateInput<PaymentLink, 'createdAt' | 'slug'>> & {
+    /** Demo only in practice: records a successful payment against the link (creates a credit). */
+    simulatePayment(id: Id, input?: { amount?: number; customerId?: Id }): Promise<Transaction>;
+  };
+  transactions: Pick<Resource<Transaction>, 'list' | 'get'> & {
+    updateStatus(id: Id, status: TransactionStatus): Promise<Transaction>;
+    addNote(id: Id, note: string): Promise<Transaction>;
+    /** Creates a linked refund (debit) transaction and returns it. */
+    refund(id: Id): Promise<Transaction>;
+  };
   payouts: Pick<Resource<Payout>, 'list' | 'get'> & {
     create(input: { amount: number; bankAccountId: Id }): Promise<Payout>;
   };
@@ -135,6 +150,15 @@ export interface DataSource {
     reply(id: Id, message: string): Promise<SupportTicket>;
     close(id: Id): Promise<SupportTicket>;
   };
+  /** The logged-in user's profile and compliance, mirroring the user thunks. */
+  user: {
+    get(userId?: Id): Promise<User>;
+    update(data: UpdateUserData, userId?: Id): Promise<User>;
+    uploadDocuments(files: Partial<Record<DocumentType, File>>, userId?: Id): Promise<User>;
+    submitCompliance(userId?: Id): Promise<User>;
+  };
+  /** Demo mode: wipe local data and re-seed. Not supported by the api source. */
+  reset(): Promise<void>;
   settings: {
     get(): Promise<Settings>;
     update(input: Partial<Settings>): Promise<Settings>;

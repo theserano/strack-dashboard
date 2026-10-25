@@ -23,10 +23,36 @@ const resource = <T, C = unknown, U = unknown>(path: string) => ({
 
 export const apiSource: DataSource = {
   customers: resource('/customers'),
-  paymentLinks: resource('/payment-links'),
+  paymentLinks: {
+    ...resource('/payment-links'),
+    simulatePayment: (id, input) => create(`/payment-links/${id}/payments`, input ?? {}),
+  },
   transactions: {
     list: (p) => list('/transactions', p),
     get: (id) => get('/transactions', id),
+    updateStatus: (id, status) => update('/transactions', id, { status }),
+    addNote: (id, note) => update('/transactions', id, { note }),
+    refund: (id) => create(`/transactions/${id}/refund`, {}),
+  },
+  user: {
+    get: (userId) => unwrap(api.get('/user', { params: { userId } })),
+    update: (data, userId) => unwrap(api.patch('/user', data, { params: { userId } })),
+    uploadDocuments: (files, userId) => {
+      const formData = new FormData();
+      Object.entries(files).forEach(([type, file]) => file && formData.append(type, file));
+      // The axios instance defaults to JSON, which would turn FormData into JSON.
+      return unwrap(
+        api.post('/user/documents', formData, {
+          params: { userId },
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 60000,
+        })
+      );
+    },
+    submitCompliance: (userId) => unwrap(api.post('/user/compliance/submit', {}, { params: { userId } })),
+  },
+  reset: async () => {
+    throw new Error('reset() is only available in demo mode');
   },
   payouts: {
     list: (p) => list('/payouts', p),

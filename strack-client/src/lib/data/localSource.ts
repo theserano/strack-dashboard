@@ -16,5 +16,7 @@ export const localSource: DataSource = {
   bankAccounts: stubNamespace(),
   activity: stubNamespace(),
   support: stubNamespace(),
+  user: stubNamespace(),
   settings: stubNamespace(),
+  reset: async () => notReady(),
 };

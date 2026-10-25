@@ -51,6 +51,15 @@ function DataTable<T>({
 
   const totalPages = pagination ? Math.max(1, Math.ceil(pagination.total / pagination.limit)) : 1;
 
+  // Page is past the end (for example after a delete): go to the last page.
+  const outOfRange = !!pagination && pagination.total > 0 && pagination.page > totalPages;
+  const onPageChange = pagination?.onPageChange;
+  React.useEffect(() => {
+    if (outOfRange) onPageChange?.(totalPages);
+  }, [outOfRange, totalPages, onPageChange]);
+
+  const isEmpty = pagination ? pagination.total === 0 : rows.length === 0;
+
   return (
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
       <div className="overflow-x-auto">
@@ -103,7 +112,19 @@ function DataTable<T>({
                   <tr
                     key={rowKey(row)}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    className={cn(onRowClick && 'cursor-pointer hover:bg-gray-50')}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    onKeyDown={
+                      onRowClick
+                        ? (e) => {
+                            if (e.target !== e.currentTarget) return; // ignore keys from buttons inside the row
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onRowClick(row);
+                            }
+                          }
+                        : undefined
+                    }
+                    className={cn(onRowClick && 'cursor-pointer hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-2')}
                   >
                     {columns.map((col) => (
                       <td key={col.key} className={cn('px-4 py-3 text-gray-700', col.className)}>
@@ -116,7 +137,7 @@ function DataTable<T>({
         </table>
       </div>
 
-      {!loading && rows.length === 0 && (
+      {!loading && isEmpty && (
         <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} />
       )}
 

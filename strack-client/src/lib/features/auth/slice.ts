@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { clearUser } from '../user/slice';
 import { loginUser, logoutUser, signUpUser } from './thunkActions';
 
 export const enum AccountType {
@@ -52,8 +53,13 @@ export const authSlice = createSlice({
       .addCase(loginUser.pending, (state) => {
         state.isLoggingIn = true;
       })
+      // Logging out or a failed session always leaves demo mode; a real login does too.
+      .addCase(clearUser, (state) => {
+        state.mode = 'live';
+      })
       .addCase(loginUser.fulfilled, (state) => {
         state.isLoggingIn = false;
+        state.mode = 'live';
       })
       .addCase(loginUser.rejected, (state) => {
         state.isLoggingIn = false;

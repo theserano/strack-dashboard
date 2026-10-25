@@ -2,7 +2,8 @@
 import { useEffect, useRef } from 'react';
 import { Provider } from 'react-redux';
 import { makeStore, AppStore } from '../lib/store';
-import { setUser } from '../lib/features/user/slice';
+import { SESSION_EXPIRED_EVENT } from '../lib/utils/axios';
+import { clearUser, setUser } from '../lib/features/user/slice';
 import { setHydrated, setMode } from '../lib/features/auth/slice';
 
 const USER_KEY = 'strack:user';
@@ -32,9 +33,13 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     // Route guards wait for this so they don't bounce a user before storage is read.
     store.dispatch(setHydrated());
 
+    // Refresh failed: clear the user; the subscriber below also removes it from storage.
+    const onExpired = () => store.dispatch(clearUser());
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+
     let last = store.getState().user.user;
     let lastMode = store.getState().auth.mode;
-    return store.subscribe(() => {
+    const unsubscribe = store.subscribe(() => {
       const mode = store.getState().auth.mode;
       if (mode !== lastMode) {
         lastMode = mode;
@@ -54,6 +59,10 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         // Ignore unreadable or blocked storage.
       }
     });
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+      unsubscribe();
+    };
   }, []);
 
   return <Provider store={storeRef.current}>{children}</Provider>;
