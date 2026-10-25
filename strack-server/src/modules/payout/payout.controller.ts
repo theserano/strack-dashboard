@@ -45,7 +45,8 @@ export const getPayoutController = handle(async (req, res) => {
 
 export const createPayoutController = handle(async (req, res) => {
   const input = parse(createPayoutSchema.safeParse(req.body));
-  const data = await createPayoutService(userIdOf(req), input);
-  res.status(201).json({ message: 'Payout requested successfully', data });
+  const { payout, created } = await createPayoutService(userIdOf(req), input);
+  // 200 with the existing payout when the idempotency key was already used.
+  res.status(created ? 201 : 200).json({ message: created ? 'Payout requested successfully' : 'Payout already requested', data: payout });
 });
 

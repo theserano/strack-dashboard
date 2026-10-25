@@ -54,7 +54,7 @@ export const validateBankAccountForm = (f: BankAccountForm) => bankFieldErrors(f
 export const payoutCsvColumns = (bankLabel: (id: string) => string): CsvColumn<Payout>[] => [
   { header: 'Date', value: (p) => p.createdAt },
   { header: 'Reference', value: (p) => p.reference },
-  { header: 'Bank account', value: (p) => bankLabel(p.bankAccountId) },
+  { header: 'Bank account', value: (p) => (p.bankName && p.accountNumber ? `${p.bankName} ${p.accountNumber}` : bankLabel(p.bankAccountId)) },
   { header: 'Amount (NGN)', value: (p) => p.amount / 100 },
   { header: 'Fee (NGN)', value: (p) => p.fee / 100 },
   { header: 'Status', value: (p) => p.status },

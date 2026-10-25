@@ -24,7 +24,7 @@ import type {
 
 const PREFIX = 'strack:demo:';
 const SEEDED_KEY = `${PREFIX}seeded`;
-const SEED_VERSION = '1';
+const SEED_VERSION = '2';
 const DATA_KEYS = ['customers', 'paymentLinks', 'transactions', 'bankAccounts', 'payouts', 'activity', 'support', 'user', 'settings'] as const;
 
 const memory = new Map<string, string>();
@@ -463,6 +463,7 @@ const bankAccountsSource: DataSource['bankAccounts'] = {
       accountNumber: clean.accountNumber,
       accountName: clean.accountName,
       isDefault,
+      createdAt: nowIso(),
     };
     save('bankAccounts', [...all.map((a) => (isDefault ? { ...a, isDefault: false } : a)), item]);
     logActivity('create', 'bank account', item.id, `Created bank account ${bankLabel(item)}`);
@@ -476,6 +477,12 @@ const bankAccountsSource: DataSource['bankAccounts'] = {
     if (clean.accountName !== undefined) clean.accountName = String(clean.accountName).trim();
     const errs = Object.values(bankFieldErrors(clean, true));
     if (errs.length) fail(errs[0] as string);
+    const changesDetails =
+      (clean.bankName !== undefined && clean.bankName !== current.bankName) ||
+      (clean.accountNumber !== undefined && clean.accountNumber !== current.accountNumber);
+    if (changesDetails && load('payouts').some((p) => p.bankAccountId === id)) {
+      fail('This bank account has payouts; add a new account instead', 409);
+    }
     const next = { ...current, ...clean, id };
     if (all.some((a) => a.id !== id && a.accountNumber === next.accountNumber && a.bankName === next.bankName)) {
       fail('This bank account already exists', 409);
@@ -539,9 +546,9 @@ export const localSource: DataSource = {
     refund: async (id) => {
       const all = load('transactions');
       const orig = findOrFail(all, id, 'Transaction');
-      if (orig.type !== 'credit' || orig.status !== 'successful') fail('Only successful payments can be refunded');
-      if (all.some((t) => t.refundOf === id)) fail('This transaction has already been refunded');
-      if (computeBalance(all) < orig.amount) fail('Insufficient balance for this refund');
+      if (orig.type !== 'credit' || orig.status !== 'successful') fail('Only successful payments can be refunded', 409);
+      if (all.some((t) => t.refundOf === id)) fail('This transaction has already been refunded', 409);
+      if (computeBalance(all) < orig.amount) fail('Insufficient balance for this refund', 409);
       const refund: Transaction = {
         id: newId('txn'),
         type: 'debit',
@@ -563,7 +570,14 @@ export const localSource: DataSource = {
   payouts: {
     list: async (p) => query(load('payouts'), p),
     get: async (id) => findOrFail(load('payouts'), id, 'Payout'),
-    create: async ({ amount, bankAccountId }) => {
+    create: async ({ amount, bankAccountId, idempotencyKey }) => {
+      if (idempotencyKey) {
+        const prior = load('payouts').find((p) => p.idempotencyKey === idempotencyKey);
+        if (prior) {
+          if (prior.amount !== amount || prior.bankAccountId !== bankAccountId) fail('This idempotency key was used for a different payout', 409);
+          return prior;
+        }
+      }
       const amountError = payoutAmountError(amount);
       if (amountError) fail(amountError);
       const account = findOrFail(load('bankAccounts'), bankAccountId, 'Bank account');
@@ -576,6 +590,9 @@ export const localSource: DataSource = {
         status: 'successful', // instant in demo mode
         reference: newRef('PYT'),
         bankAccountId,
+        bankName: account.bankName,
+        accountNumber: account.accountNumber,
+        idempotencyKey,
         createdAt: nowIso(),
       };
       const debit: Transaction = {

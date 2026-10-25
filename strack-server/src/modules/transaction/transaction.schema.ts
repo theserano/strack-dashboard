@@ -46,6 +46,7 @@ const transactionSchema = new Schema<ITransaction>(
 );
 
 transactionSchema.index({ owner: 1, createdAt: -1 });
+transactionSchema.index({ owner: 1, reference: 1 }, { unique: true });
 // Backstop for double refunds: at most one refund per original transaction.
 transactionSchema.index(
   { owner: 1, refundOf: 1 },

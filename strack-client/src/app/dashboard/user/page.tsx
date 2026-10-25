@@ -56,7 +56,7 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         <StatCard label="Total Balance" value={money(data?.balance)} icon={Wallet} loading={loading} hint="Available now" />
         <StatCard label="Revenue" value={money(data?.totalRevenue)} icon={ArrowDownLeft} change={data?.revenueChange} loading={loading} hint="No previous period to compare" />
-        <StatCard label="Payouts" value={money(data?.totalPayouts)} icon={ArrowUpRight} loading={loading} hint="Money paid out in this period" />
+        <StatCard label="Payouts" value={money(data?.totalPayouts)} icon={ArrowUpRight} loading={loading} hint="Paid out in this period; includes ₦50 fee per payout" />
         <StatCard label="Transactions" value={data ? String(data.transactionCount) : '—'} icon={Receipt} change={data?.countChange} loading={loading} hint="No previous period to compare" />
         <StatCard label="Success Rate" value={data ? `${data.successRate}%` : '—'} icon={CheckCircle2} loading={loading} hint="Successful vs all transactions" />
         <StatCard label="Total Customers" value={data ? String(data.customerCount) : '—'} icon={Users} loading={loading} hint="All time" />

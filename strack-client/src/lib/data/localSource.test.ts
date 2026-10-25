@@ -537,7 +537,8 @@ describe('bank accounts and payouts rules', () => {
     await ds.bankAccounts.create({ ...acct, isDefault: false });
     await rejects(ds.bankAccounts.create({ ...acct, isDefault: false }), 'already exists');
     await ds.bankAccounts.create({ ...acct, bankName: 'Access Bank', isDefault: false });
-    await rejects(ds.bankAccounts.update('bnk_001', { bankName: 'Zenith Bank', accountNumber: '1111111111' }), 'already exists');
+    const other = await ds.bankAccounts.create({ ...acct, bankName: 'Wema Bank', isDefault: false });
+    await rejects(ds.bankAccounts.update(other.id, { bankName: 'Zenith Bank' }), 'already exists');
   });
   it('keeps exactly one default and promotes another when it is deleted', async () => {
     const b = await ds.bankAccounts.create({ ...acct, isDefault: true });
@@ -587,5 +588,49 @@ describe('bank accounts and payouts rules', () => {
     const amount = getDemoBalance() - 5000;
     await ds.payouts.create({ amount, bankAccountId: 'bnk_001' });
     await rejects(ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001' }), 'Insufficient balance');
+  });
+  it('freezes bank details once an account has payouts (409) but allows the name', async () => {
+    for (const patch of [{ bankName: 'Access Bank' }, { accountNumber: '9999999999' }]) {
+      const e = await ds.bankAccounts.update('bnk_001', patch).catch((x) => x);
+      expect(e.response.status).toBe(409);
+      expect(getErrorMessage(e)).toContain('add a new account instead');
+    }
+    await ds.bankAccounts.update('bnk_001', { accountName: 'New Name' });
+    const fresh = await ds.bankAccounts.create({ ...acct, isDefault: false });
+    expect((await ds.bankAccounts.update(fresh.id, { accountNumber: '2222222222' })).accountNumber).toBe('2222222222');
+  });
+  it('snapshots bank details on the payout', async () => {
+    const fresh = await ds.bankAccounts.create({ ...acct, isDefault: false });
+    const p = await ds.payouts.create({ amount: 10000, bankAccountId: fresh.id });
+    expect(p).toMatchObject({ bankName: 'Zenith Bank', accountNumber: '1111111111' });
+    expect((await ds.payouts.get(p.id)).bankName).toBe('Zenith Bank');
+  });
+  it('a repeated idempotency key returns the first payout and debits once', async () => {
+    const before = getDemoBalance();
+    const a = await ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001', idempotencyKey: 'key-12345678' });
+    const b = await ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001', idempotencyKey: 'key-12345678' });
+    expect(b.id).toBe(a.id);
+    expect(await all(ds.payouts)).toHaveLength(7);
+    expect(getDemoBalance()).toBe(before - 15000);
+    const e = await ds.payouts.create({ amount: 20000, bankAccountId: 'bnk_001', idempotencyKey: 'key-12345678' }).catch((x) => x);
+    expect(e.response.status).toBe(409);
+    await ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001', idempotencyKey: 'other-key-1' });
+    expect(await all(ds.payouts)).toHaveLength(8);
+  });
+  it('refund failures are 409', async () => {
+    const txns = await all<{ id: string; type: string; status: string }>(ds.transactions);
+    const orig = txns.find((t) => t.type === 'credit' && t.status === 'successful')!;
+    await ds.transactions.refund(orig.id);
+    for (const id of [orig.id, txns.find((t) => t.type === 'debit')!.id]) {
+      const e = await ds.transactions.refund(id).catch((x) => x);
+      expect(e.response.status).toBe(409);
+    }
+  });
+  it('bank accounts have createdAt and list newest first', async () => {
+    const fresh = await ds.bankAccounts.create({ ...acct, isDefault: false });
+    const list = await all(ds.bankAccounts);
+    expect(fresh.createdAt).toBeTruthy();
+    expect(list[0].id).toBe(fresh.id);
+    expect(list.every((a) => !!a.createdAt)).toBe(true);
   });
 });

@@ -49,6 +49,7 @@ export interface BankAccount {
   accountNumber: string;
   accountName: string;
   isDefault: boolean;
+  createdAt: IsoDate;
 }
 
 export type PayoutStatus = 'successful' | 'pending' | 'failed';
@@ -59,6 +60,11 @@ export interface Payout {
   status: PayoutStatus;
   reference: string;
   bankAccountId: Id;
+  /** Snapshot of the bank account when the payout was made (absent on very old demo data). */
+  bankName?: string;
+  accountNumber?: string;
+  /** Demo mode only: lets a retried request return the original payout. */
+  idempotencyKey?: string;
   createdAt: IsoDate;
 }
 
@@ -198,9 +204,10 @@ export interface DataSource {
     refund(id: Id): Promise<Transaction>;
   };
   payouts: Pick<Resource<Payout>, 'list' | 'get'> & {
-    create(input: { amount: number; bankAccountId: Id }): Promise<Payout>;
+    /** A repeated idempotencyKey returns the first payout instead of creating another. */
+    create(input: { amount: number; bankAccountId: Id; idempotencyKey?: string }): Promise<Payout>;
   };
-  bankAccounts: Resource<BankAccount>;
+  bankAccounts: Resource<BankAccount, CreateInput<BankAccount, 'createdAt'>>;
   activity: Pick<Resource<ActivityEvent>, 'list'>;
   support: Pick<Resource<SupportTicket>, 'list' | 'get'> & {
     create(input: { subject: string; category: string; message: string }): Promise<SupportTicket>;

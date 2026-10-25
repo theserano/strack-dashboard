@@ -36,6 +36,8 @@ import { formatMoney, formatMoneyOrDash } from '@/lib/utils/money';
 import { showToast } from '@/lib/utils/plainFunctions';
 
 const LIMIT = 10;
+const newIdempotencyKey = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 const STATUSES: PayoutStatus[] = ['successful', 'pending', 'failed'];
 const fmtDateTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const field = 'rounded-md border border-[#E1E4EA] px-3 py-2 text-sm';
@@ -62,7 +64,8 @@ export default function PayoutPage() {
   const accountsQ = useBankAccounts({ limit: 1000 });
   const accounts: BankAccount[] = accountsQ.data?.items ?? [];
   const accountById = (id: string) => accounts.find((a) => a.id === id);
-  const labelFor = (id: string) => (accountsQ.data ? bankLabel(accountById(id)) : '...');
+  const labelFor = (pay: Payout) =>
+    pay.bankName && pay.accountNumber ? bankLabel(pay as { bankName: string; accountNumber: string }) : accountsQ.data ? bankLabel(accountById(pay.bankAccountId)) : '...';
 
   /* ---------------- request payout ---------------- */
   const [requestOpen, setRequestOpen] = useState(false);
@@ -70,6 +73,8 @@ export default function PayoutPage() {
   const [accountId, setAccountId] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // One key per modal opening: a retry after a timeout or double click returns the same payout.
+  const [idempotencyKey, setIdempotencyKey] = useState('');
 
   const amount = parseNairaInput(amountText);
   const amountError = amountText.trim() === '' ? null : amount === null ? 'Enter a valid amount' : payoutAmountError(amount);
@@ -82,6 +87,7 @@ export default function PayoutPage() {
     setAmountText('');
     setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
     setConfirming(false);
+    setIdempotencyKey(newIdempotencyKey());
     setRequestOpen(true);
   };
   const closeRequest = () => {
@@ -94,7 +100,7 @@ export default function PayoutPage() {
     if (submitting || amount === null || !accountId) return;
     setSubmitting(true);
     try {
-      const p = await getDataSource(mode).payouts.create({ amount, bankAccountId: accountId });
+      const p = await getDataSource(mode).payouts.create({ amount, bankAccountId: accountId, idempotencyKey });
       showToast({ message: 'Payout requested', description: `${formatMoney(p.amount)} sent. Reference ${p.reference}.` });
       setRequestOpen(false);
       setPage(1);
@@ -205,7 +211,7 @@ export default function PayoutPage() {
   const columns: Column<Payout>[] = [
     { key: 'date', header: 'Date', render: (p) => fmtDateTime(p.createdAt) },
     { key: 'reference', header: 'Reference', render: (p) => <span className="font-mono text-xs">{p.reference}</span> },
-    { key: 'bank', header: 'Bank account', render: (p) => labelFor(p.bankAccountId) },
+    { key: 'bank', header: 'Bank account', render: (p) => labelFor(p) },
     { key: 'amount', header: 'Amount', render: (p) => <span className="font-medium">{formatMoney(p.amount)}</span> },
     { key: 'fee', header: 'Fee', render: (p) => formatMoney(p.fee) },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
@@ -415,8 +421,8 @@ export default function PayoutPage() {
             <dt className="text-[#525866]">Amount</dt><dd>{formatMoney(selected.amount)}</dd>
             <dt className="text-[#525866]">Fee</dt><dd>{formatMoney(selected.fee)}</dd>
             <dt className="text-[#525866]">Total debited</dt><dd className="font-medium">{formatMoney(selected.amount + selected.fee)}</dd>
-            <dt className="text-[#525866]">Bank</dt><dd>{selectedAccount?.bankName ?? (accountsQ.data ? 'Deleted account' : '...')}</dd>
-            <dt className="text-[#525866]">Account number</dt><dd className="font-mono">{selectedAccount?.accountNumber ?? '-'}</dd>
+            <dt className="text-[#525866]">Bank</dt><dd>{selected.bankName ?? selectedAccount?.bankName ?? (accountsQ.data ? 'Deleted account' : '...')}</dd>
+            <dt className="text-[#525866]">Account number</dt><dd className="font-mono">{selected.accountNumber ?? selectedAccount?.accountNumber ?? '-'}</dd>
             <dt className="text-[#525866]">Account name</dt><dd>{selectedAccount?.accountName ?? '-'}</dd>
           </dl>
         )}

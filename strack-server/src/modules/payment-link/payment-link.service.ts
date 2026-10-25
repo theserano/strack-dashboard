@@ -89,10 +89,12 @@ export const updatePaymentLinkService = async (userId: string, id: string, input
   if (Object.keys(rest).length) update.$set = rest;
   if (amount === null) update.$unset = { amount: 1 };
   else if (amount !== undefined) update.$set = { ...(update.$set as object), amount };
-  const l = await PaymentLinkModel.findOneAndUpdate({ _id: idOf(id), owner: ownerId(userId) }, update, {
-    new: true,
-    runValidators: true,
-  });
+  const owner = ownerId(userId);
+  const _id = idOf(id);
+  // Same lock as payments: disabling (or changing) a link waits for an in-flight payment and vice versa.
+  const l = await withOwnerLock(owner, (session) =>
+    PaymentLinkModel.findOneAndUpdate({ _id, owner }, update, { new: true, runValidators: true, session })
+  );
   if (!l) throw new HttpError(404, 'Payment link not found');
   return toDto(l);
 };

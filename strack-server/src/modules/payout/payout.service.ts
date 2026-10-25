@@ -34,6 +34,8 @@ export const toPayoutDto = (p: IPayout) => ({
   status: p.status,
   reference: p.reference,
   bankAccountId: String(p.bankAccountId),
+  bankName: p.bankName,
+  accountNumber: p.accountNumber,
   createdAt: p.createdAt.toISOString(),
 });
 
@@ -63,42 +65,68 @@ export const getPayoutService = async (userId: string, id: string) => {
   return toPayoutDto(p);
 };
 
+const MAX_REFERENCE_TRIES = 3;
+
+/** Returns the payout and whether it was newly created (false when an idempotency key matched). */
 export const createPayoutService = async (userId: string, input: CreatePayoutInput) => {
   const owner = ownerId(userId);
   const bankAccountId = idOf(input.bankAccountId, 'Bank account');
-  const payout = await withOwnerLock(owner, async (session) => {
-    const account = await BankAccountModel.findOne({ _id: bankAccountId, owner }).session(session);
-    if (!account) throw new HttpError(404, 'Bank account not found');
-    if ((await balanceOf(owner, session)) < input.amount + PAYOUT_FEE) throw new HttpError(400, 'Insufficient balance');
-    const [p] = await PayoutModel.create(
-      [
-        {
-          owner,
-          amount: input.amount,
-          fee: PAYOUT_FEE,
-          status: 'successful',
-          reference: `PYT-${randomBytes(4).toString('hex').toUpperCase()}`,
-          bankAccountId,
-        },
-      ],
-      { session }
-    );
-    await TransactionModel.create(
-      [
-        {
-          owner,
-          type: 'debit',
-          amount: input.amount + PAYOUT_FEE,
-          status: 'successful',
-          reference: newReference(),
-          channel: 'bank_transfer',
-          description: `Payout to ${account.bankName} ${account.accountNumber}`,
-          payoutId: p._id,
-        },
-      ],
-      { session }
-    );
-    return p;
-  });
-  return toPayoutDto(payout);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const result = await withOwnerLock(owner, async (session) => {
+        if (input.idempotencyKey) {
+          const prior = await PayoutModel.findOne({ owner, idempotencyKey: input.idempotencyKey }).session(session);
+          if (prior) {
+            if (prior.amount !== input.amount || String(prior.bankAccountId) !== String(bankAccountId)) {
+              throw new HttpError(409, 'This idempotency key was used for a different payout');
+            }
+            return { payout: prior, created: false };
+          }
+        }
+        const account = await BankAccountModel.findOne({ _id: bankAccountId, owner }).session(session);
+        if (!account) throw new HttpError(404, 'Bank account not found');
+        if ((await balanceOf(owner, session)) < input.amount + PAYOUT_FEE) throw new HttpError(400, 'Insufficient balance');
+        const [p] = await PayoutModel.create(
+          [
+            {
+              owner,
+              amount: input.amount,
+              fee: PAYOUT_FEE,
+              status: 'successful',
+              reference: `PYT-${randomBytes(4).toString('hex').toUpperCase()}`,
+              bankAccountId,
+              bankName: account.bankName,
+              accountNumber: account.accountNumber,
+              idempotencyKey: input.idempotencyKey,
+            },
+          ],
+          { session }
+        );
+        await TransactionModel.create(
+          [
+            {
+              owner,
+              type: 'debit',
+              amount: input.amount + PAYOUT_FEE,
+              status: 'successful',
+              reference: newReference(),
+              channel: 'bank_transfer',
+              description: `Payout to ${account.bankName} ${account.accountNumber}`,
+              payoutId: p._id,
+            },
+          ],
+          { session }
+        );
+        return { payout: p, created: true };
+      });
+      return { payout: toPayoutDto(result.payout), created: result.created };
+    } catch (e) {
+      // A duplicate-key error aborts the Mongo transaction, so a reference collision retries the whole
+      // locked operation with fresh references. A duplicate idempotency key (concurrent first use) also
+      // retries: the next attempt finds the first payout.
+      const dup = e as { code?: number; keyPattern?: Record<string, unknown> };
+      const retryable = dup?.code === 11000 && ('reference' in (dup.keyPattern ?? {}) || 'idempotencyKey' in (dup.keyPattern ?? {}));
+      if (!retryable || attempt >= MAX_REFERENCE_TRIES) throw e;
+    }
+  }
 };

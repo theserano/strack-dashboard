@@ -12,6 +12,10 @@ export interface IPayout extends Document {
   status: (typeof PAYOUT_STATUSES)[number];
   reference: string;
   bankAccountId: Types.ObjectId;
+  /** Snapshot of the bank account at payout time (the account's details can change later). */
+  bankName: string;
+  accountNumber: string;
+  idempotencyKey?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,11 +28,17 @@ const payoutSchema = new Schema<IPayout>(
     status: { type: String, enum: PAYOUT_STATUSES, required: true },
     reference: { type: String, required: true },
     bankAccountId: { type: Schema.Types.ObjectId, ref: 'BankAccount', required: true },
+    bankName: { type: String, required: true },
+    accountNumber: { type: String, required: true },
+    idempotencyKey: { type: String },
   },
   { timestamps: true }
 );
 
 payoutSchema.index({ owner: 1, createdAt: -1 });
 payoutSchema.index({ owner: 1, bankAccountId: 1 });
+payoutSchema.index({ owner: 1, reference: 1 }, { unique: true });
+// A repeated idempotency key returns the existing payout instead of creating another.
+payoutSchema.index({ owner: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } });
 
 export const PayoutModel = model<IPayout>('Payout', payoutSchema);

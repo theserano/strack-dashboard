@@ -28,7 +28,12 @@ export const toBankAccountDto = (b: IBankAccount) => ({
 });
 
 const mapDuplicate = (e: unknown): never => {
-  if ((e as { code?: number })?.code === 11000) throw new HttpError(409, 'This bank account already exists');
+  const dup = e as { code?: number; keyPattern?: Record<string, unknown> };
+  if (dup?.code === 11000) {
+    // {owner, accountNumber, bankName} is the account index; {owner} (partial) is the single-default index.
+    if ('accountNumber' in (dup.keyPattern ?? {})) throw new HttpError(409, 'This bank account already exists');
+    throw new HttpError(409, 'Default account changed, please retry');
+  }
   throw e;
 };
 
@@ -78,6 +83,13 @@ export const updateBankAccountService = async (userId: string, id: string, input
       const b = await BankAccountModel.findOne({ _id, owner }).session(session);
       if (!b) throw new HttpError(404, 'Bank account not found');
       const { isDefault, ...fields } = input;
+      // Payouts keep the account they were paid to: once used, its bank details are frozen.
+      const changesDetails =
+        (fields.bankName !== undefined && fields.bankName !== b.bankName) ||
+        (fields.accountNumber !== undefined && fields.accountNumber !== b.accountNumber);
+      if (changesDetails && (await PayoutModel.exists({ owner, bankAccountId: _id }).session(session))) {
+        throw new HttpError(409, 'This bank account has payouts; add a new account instead');
+      }
       b.set(fields);
       // Making an account the default unsets the others. The default cannot be unset directly:
       // make another account the default instead.

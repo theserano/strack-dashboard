@@ -98,6 +98,7 @@ export function generateSeed(now: Date = new Date(), seed = 20260101): DemoData 
     accountNumber,
     accountName: 'Strack Demo Ventures',
     isDefault: i === 0,
+    createdAt: ago(90 - i * 10),
   }));
 
   // 244 credits + 6 payout debits = 250 transactions.
@@ -136,6 +137,8 @@ export function generateSeed(now: Date = new Date(), seed = 20260101): DemoData 
       status: 'successful',
       reference: ref('PYT'),
       bankAccountId: bankAccounts[i % 2 === 0 ? 0 : 1].id,
+      bankName: bankAccounts[i % 2 === 0 ? 0 : 1].bankName,
+      accountNumber: bankAccounts[i % 2 === 0 ? 0 : 1].accountNumber,
       createdAt: date,
     });
     transactions.push({
