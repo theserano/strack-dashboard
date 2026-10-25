@@ -12,9 +12,7 @@ export const getUserController = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: 'User fetched successfully',
-      data: {
-        ...user,
-      },
+      data: user,
     });
   } catch (error) {
     console.error(error);

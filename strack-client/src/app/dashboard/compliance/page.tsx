@@ -8,12 +8,14 @@ import { getUser } from '@/lib/features/user/thunkActions';
 
 const Compliance = () => {
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector((state) => state.user);
+  const userId = useAppSelector((state) => state.user.user?._id);
 
   useEffect(() => {
+    // The saved user is restored right after mount, so wait for the ID instead of sending an empty one.
+    if (!userId) return;
     dispatch(
       getUser({
-        userId: user?._id || '',
+        userId,
         onFailure: (error) => {
           console.error('Failed to fetch user data:', error);
         },
@@ -22,7 +24,7 @@ const Compliance = () => {
         },
       })
     );
-  }, []);
+  }, [dispatch, userId]);
 
   return (
     <main>

@@ -3,7 +3,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { User } from '../user/thunkActions';
 import api from '@/lib/utils/axios';
 import { AccountType } from '@/lib/states/accounts/accounts';
-import { setUser } from '../user/slice';
+import { clearUser, setUser } from '../user/slice';
 import { tokenManager } from '@/lib/utils/auth';
 
 interface signUpDataArgs extends ReduxAction {
@@ -67,9 +67,11 @@ export const loginUser = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logoutUser',
-  async ({ onFailure, onSuccess }: ReduxAction, { rejectWithValue }) => {
+  async ({ onFailure, onSuccess }: ReduxAction, { dispatch, rejectWithValue }) => {
     try {
       await api.post('/auth/logout');
+      tokenManager.clear();
+      dispatch(clearUser());
       if (onSuccess) onSuccess(null);
       return;
     } catch (error) {

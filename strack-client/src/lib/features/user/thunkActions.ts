@@ -21,11 +21,7 @@ export const getUser = createAsyncThunk(
   'auth/getUser',
   async ({ userId, onFailure, onSuccess }: UserArgs, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/user`, {
-        params: {
-          userId,
-        },
-      });
+      const response = await api.get(`/user`, { params: { userId } });
       if (onSuccess) onSuccess(response.data.data);
       return response.data.data;
     } catch (error) {

@@ -6,7 +6,7 @@ import CustomInput from '@/lib/components/CustomInput';
 import CustomButton from '@/lib/components/CustomButton';
 import { CustomDateInput, yearsAgo } from '@/lib/components/CustomDate';
 import { useAppSelector } from '@/lib/hook';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const PersonalInformation = () => {
   const { user } = useAppSelector((state) => state.user);
@@ -16,6 +16,15 @@ const PersonalInformation = () => {
   const [phone, setPhone] = useState(user?.phone || '');
   const [bvn, setBvn] = useState('');
   const [dob, setDob] = useState('');
+
+  // After a page reload the user arrives from getUser after first render, so fill the fields then.
+  useEffect(() => {
+    if (!user) return;
+    setFirstName((v) => v || user.firstName || '');
+    setLastName((v) => v || user.lastName || '');
+    setEmail((v) => v || user.email || '');
+    setPhone((v) => v || user.phone || '');
+  }, [user]);
 
   return (
     <section className="max-w-[600px] flex flex-col mt-8 gap-8">
