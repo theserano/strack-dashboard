@@ -51,7 +51,7 @@ const LINKS: Array<[string, number | undefined, string]> = [
   ['Membership Fee', 800000, 'Annual membership'],
 ];
 const BANKS = [
-  ['GTBank', '0123456789'],
+  ['Guaranty Trust Bank (GTBank)', '0123456789'],
   ['Access Bank', '0987654321'],
 ];
 

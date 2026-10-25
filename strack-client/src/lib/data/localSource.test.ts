@@ -104,7 +104,7 @@ describe('CRUD and activity', () => {
     await rejects(ds.paymentLinks.simulatePayment(l.id), 'disabled');
   });
   it('bank accounts keep a single default', async () => {
-    const b = await ds.bankAccounts.create({ bankName: 'Zenith', accountNumber: '111', accountName: 'X', isDefault: true });
+    const b = await ds.bankAccounts.create({ bankName: 'Zenith Bank', accountNumber: '1111111111', accountName: 'X', isDefault: true });
     const accts = await all(ds.bankAccounts);
     expect(accts.filter((a) => a.isDefault).map((a) => a.id)).toEqual([b.id]);
     await ds.bankAccounts.remove(b.id);
@@ -157,7 +157,7 @@ describe('money flows', () => {
     await rejects(ds.payouts.create({ amount: bal + 1, bankAccountId: 'bnk_001' }), 'Insufficient balance');
     expect(getDemoBalance()).toBe(bal);
     expect(await all(ds.payouts)).toHaveLength(6);
-    await rejects(ds.payouts.create({ amount: 0, bankAccountId: 'bnk_001' }), 'valid amount');
+    await rejects(ds.payouts.create({ amount: 0, bankAccountId: 'bnk_001' }), 'Minimum payout');
   });
   it('payout of exactly balance minus fee is allowed', async () => {
     await ds.payouts.create({ amount: getDemoBalance() - 5000, bankAccountId: 'bnk_001' });
@@ -516,5 +516,76 @@ describe('transactions page behaviour', () => {
     await ds.payouts.create({ amount: bal - fee - 1, bankAccountId: 'bnk_001' });
     expect(getDemoBalance()).toBe(1);
     await rejects(ds.transactions.refund(orig.id), 'Insufficient balance');
+  });
+});
+
+describe('bank accounts and payouts rules', () => {
+  const acct = { bankName: 'Zenith Bank', accountNumber: '1111111111', accountName: 'Ada' };
+  const defaults = async () => (await all(ds.bankAccounts)).filter((a) => a.isDefault);
+
+  it('validates account number, bank and name', async () => {
+    for (const n of ['123456789', '12345678901', '12345abcde', '']) {
+      await rejects(ds.bankAccounts.create({ ...acct, accountNumber: n, isDefault: false }), '10 digits');
+    }
+    await rejects(ds.bankAccounts.create({ ...acct, bankName: 'Fake Bank', isDefault: false }), 'supported bank');
+    await rejects(ds.bankAccounts.create({ ...acct, accountName: '  ', isDefault: false }), 'Account name is required');
+    await rejects(ds.bankAccounts.create({ ...acct, accountName: 'x'.repeat(101), isDefault: false }), 'at most 100');
+    await rejects(ds.bankAccounts.update('bnk_001', { accountNumber: '12' }), '10 digits');
+    expect(await all(ds.bankAccounts)).toHaveLength(2);
+  });
+  it('rejects a duplicate {accountNumber, bankName} but allows the same number at another bank', async () => {
+    await ds.bankAccounts.create({ ...acct, isDefault: false });
+    await rejects(ds.bankAccounts.create({ ...acct, isDefault: false }), 'already exists');
+    await ds.bankAccounts.create({ ...acct, bankName: 'Access Bank', isDefault: false });
+    await rejects(ds.bankAccounts.update('bnk_001', { bankName: 'Zenith Bank', accountNumber: '1111111111' }), 'already exists');
+  });
+  it('keeps exactly one default and promotes another when it is deleted', async () => {
+    const b = await ds.bankAccounts.create({ ...acct, isDefault: true });
+    expect((await defaults()).map((a) => a.id)).toEqual([b.id]);
+    await ds.bankAccounts.update('bnk_002', { isDefault: true });
+    expect((await defaults()).map((a) => a.id)).toEqual(['bnk_002']);
+    await ds.bankAccounts.update('bnk_002', { isDefault: false }); // cannot be unset directly
+    expect((await defaults()).map((a) => a.id)).toEqual(['bnk_002']);
+    await ds.bankAccounts.update(b.id, { isDefault: true });
+    await ds.bankAccounts.remove(b.id); // the default, no payouts
+    expect((await defaults())).toHaveLength(1);
+    expect(await all(ds.bankAccounts)).toHaveLength(2);
+  });
+  it('the first account becomes the default', async () => {
+    store.set('strack:demo:payouts', '[]');
+    for (const a of await all(ds.bankAccounts)) await ds.bankAccounts.remove(a.id);
+    expect(await all(ds.bankAccounts)).toHaveLength(0);
+    const first = await ds.bankAccounts.create({ ...acct, isDefault: false });
+    expect(first.isDefault).toBe(true);
+    const second = await ds.bankAccounts.create({ ...acct, bankName: 'Access Bank', isDefault: false });
+    expect(second.isDefault).toBe(false);
+  });
+  it('rejects deleting an account that has payouts (409) and keeps it', async () => {
+    const e = await ds.bankAccounts.remove('bnk_001').catch((x) => x);
+    expect(e.response.status).toBe(409);
+    expect(getErrorMessage(e)).toContain('has payouts');
+    expect(await all(ds.bankAccounts)).toHaveLength(2);
+    const fresh = await ds.bankAccounts.create({ ...acct, isDefault: false });
+    await ds.bankAccounts.remove(fresh.id);
+    expect(await all(ds.bankAccounts)).toHaveLength(2);
+  });
+  it('payout enforces min and max and rejects non-integers', async () => {
+    await rejects(ds.payouts.create({ amount: 9999, bankAccountId: 'bnk_001' }), 'Minimum payout');
+    await rejects(ds.payouts.create({ amount: 1_000_000_001, bankAccountId: 'bnk_001' }), 'Maximum payout');
+    await rejects(ds.payouts.create({ amount: 10000.5, bankAccountId: 'bnk_001' }), 'valid amount');
+    const before = getDemoBalance();
+    const p = await ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001' });
+    expect(p).toMatchObject({ amount: 10000, fee: 5000, status: 'successful' });
+    expect(getDemoBalance()).toBe(before - 15000);
+  });
+  it('payout needs an existing bank account', async () => {
+    const e = await ds.payouts.create({ amount: 10000, bankAccountId: 'nope' }).catch((x) => x);
+    expect(e.response.status).toBe(404);
+    expect(await all(ds.payouts)).toHaveLength(6);
+  });
+  it('a payout cannot spend the balance twice', async () => {
+    const amount = getDemoBalance() - 5000;
+    await ds.payouts.create({ amount, bankAccountId: 'bnk_001' });
+    await rejects(ds.payouts.create({ amount: 10000, bankAccountId: 'bnk_001' }), 'Insufficient balance');
   });
 });

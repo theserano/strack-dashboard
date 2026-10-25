@@ -1,0 +1,33 @@
+import { z } from 'zod';
+import { DEFAULT_TZ, validTz } from '../stats/stats.validation';
+import { PAYOUT_STATUSES } from './payout.schema';
+import { MAX_PAYOUT, MIN_PAYOUT } from './payout.constants';
+
+const objectId = z.string().trim().regex(/^[a-f\d]{24}$/i, 'Invalid id');
+const day = z.iso.date('Must be YYYY-MM-DD');
+
+export const listPayoutsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).max(100000).default(1),
+    limit: z.coerce.number().int().min(1).max(1000).default(10),
+    status: z.enum(PAYOUT_STATUSES).optional(),
+    // Local calendar days in `tz`, inclusive.
+    from: day.optional(),
+    to: day.optional(),
+    tz: z.string().max(64).refine(validTz, 'Invalid time zone').default(DEFAULT_TZ),
+  })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: 'from must be on or before to' });
+
+export const createPayoutSchema = z
+  .object({
+    amount: z
+      .number({ error: 'Enter a valid amount' })
+      .int('Enter a valid amount')
+      .min(MIN_PAYOUT, 'Minimum payout is ₦100')
+      .max(MAX_PAYOUT, 'Maximum payout is ₦10,000,000'),
+    bankAccountId: objectId,
+  })
+  .strict();
+
+export type ListPayoutsQuery = z.infer<typeof listPayoutsQuerySchema>;
+export type CreatePayoutInput = z.infer<typeof createPayoutSchema>;

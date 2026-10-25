@@ -1,6 +1,7 @@
 import type { DocumentType, StoredDocument, User } from '@/lib/features/user/thunkActions';
 import { DEMO_USER_ID, PAYOUT_FEE, generateSeed, type DemoData } from './seed';
 import { computeOverview } from './overview';
+import { bankFieldErrors, bankLabel, payoutAmountError } from './payoutForm';
 import type {
   ActivityEvent,
   BankAccount,
@@ -442,21 +443,60 @@ const linksSource: DataSource['paymentLinks'] = {
   },
 };
 
-const accounts = crud<BankAccount, Omit<BankAccount, 'id'>>(
-  'bankAccounts', 'bnk', 'bank account', (b) => `${b.bankName} ${b.accountNumber}`, (i) => i,
-  {
-    onRemove: (id) => {
-      if (load('payouts').some((p) => p.bankAccountId === id)) fail('This bank account has payouts and cannot be deleted');
-    },
-  }
-);
-
-/** Only one default account. */
-const keepSingleDefault = (defaultId?: Id) => {
-  const all = load('bankAccounts');
-  if (!all.length) return;
-  const id = all.some((a) => a.id === defaultId && a.isDefault) ? defaultId : all.find((a) => a.isDefault)?.id ?? all[0].id;
-  save('bankAccounts', all.map((a) => ({ ...a, isDefault: a.id === id })));
+/** Mirrors the server rules for bank accounts (bank list, 10-digit number, name length, uniqueness). */
+const bankAccountsSource: DataSource['bankAccounts'] = {
+  list: async (p) => query(load('bankAccounts'), p),
+  get: async (id) => findOrFail(load('bankAccounts'), id, 'Bank account'),
+  create: async (input) => {
+    const clean = { ...input, accountName: String(input.accountName ?? '').trim() };
+    const errs = Object.values(bankFieldErrors(clean));
+    if (errs.length) fail(errs[0] as string);
+    const all = load('bankAccounts');
+    if (all.some((a) => a.accountNumber === clean.accountNumber && a.bankName === clean.bankName)) {
+      fail('This bank account already exists', 409);
+    }
+    // The first account is always the default; a new default unsets the others.
+    const isDefault = !!clean.isDefault || all.length === 0;
+    const item: BankAccount = {
+      id: newId('bnk'),
+      bankName: clean.bankName,
+      accountNumber: clean.accountNumber,
+      accountName: clean.accountName,
+      isDefault,
+    };
+    save('bankAccounts', [...all.map((a) => (isDefault ? { ...a, isDefault: false } : a)), item]);
+    logActivity('create', 'bank account', item.id, `Created bank account ${bankLabel(item)}`);
+    return item;
+  },
+  update: async (id, input) => {
+    const all = load('bankAccounts');
+    const current = findOrFail(all, id, 'Bank account');
+    const { isDefault, ...fields } = input;
+    const clean: Partial<BankAccount> = { ...fields };
+    if (clean.accountName !== undefined) clean.accountName = String(clean.accountName).trim();
+    const errs = Object.values(bankFieldErrors(clean, true));
+    if (errs.length) fail(errs[0] as string);
+    const next = { ...current, ...clean, id };
+    if (all.some((a) => a.id !== id && a.accountNumber === next.accountNumber && a.bankName === next.bankName)) {
+      fail('This bank account already exists', 409);
+    }
+    // The default cannot be unset directly: make another account the default instead.
+    const makeDefault = isDefault === true && !current.isDefault;
+    if (makeDefault) next.isDefault = true;
+    save('bankAccounts', all.map((a) => (a.id === id ? next : makeDefault ? { ...a, isDefault: false } : a)));
+    logActivity('update', 'bank account', id, `Updated bank account ${bankLabel(next)}`);
+    return next;
+  },
+  remove: async (id) => {
+    const all = load('bankAccounts');
+    const item = findOrFail(all, id, 'Bank account');
+    if (load('payouts').some((p) => p.bankAccountId === id)) fail('This bank account has payouts and cannot be deleted', 409);
+    const rest = all.filter((a) => a.id !== id);
+    // Deleting the default promotes the first remaining account.
+    if (item.isDefault && rest.length) rest[0] = { ...rest[0], isDefault: true };
+    save('bankAccounts', rest);
+    logActivity('delete', 'bank account', id, `Deleted bank account ${bankLabel(item)}`);
+  },
 };
 
 const MAX_NOTE = 500;
@@ -524,7 +564,8 @@ export const localSource: DataSource = {
     list: async (p) => query(load('payouts'), p),
     get: async (id) => findOrFail(load('payouts'), id, 'Payout'),
     create: async ({ amount, bankAccountId }) => {
-      if (!Number.isInteger(amount) || amount <= 0) fail('Enter a valid amount');
+      const amountError = payoutAmountError(amount);
+      if (amountError) fail(amountError);
       const account = findOrFail(load('bankAccounts'), bankAccountId, 'Bank account');
       const transactions = load('transactions');
       if (computeBalance(transactions) < amount + PAYOUT_FEE) fail('Insufficient balance');
@@ -543,7 +584,7 @@ export const localSource: DataSource = {
         amount: amount + PAYOUT_FEE,
         status: 'successful',
         reference: newRef('TXN'),
-        channel: 'bank_transfer',
+        channel: 'bank_transfer', // payouts settle instantly: the debit is successful and counts against the balance at once
         description: `Payout to ${account.bankName} ${account.accountNumber}`,
         date: payout.createdAt,
         payoutId: payout.id,
@@ -554,23 +595,7 @@ export const localSource: DataSource = {
       return payout;
     },
   },
-  bankAccounts: {
-    ...accounts,
-    create: async (input) => {
-      const created = await accounts.create({ ...input, isDefault: input.isDefault || load('bankAccounts').length === 0 });
-      keepSingleDefault(created.isDefault ? created.id : undefined);
-      return (await accounts.get(created.id));
-    },
-    update: async (id, input) => {
-      const updated = await accounts.update(id, input);
-      keepSingleDefault(input.isDefault ? id : undefined);
-      return accounts.get(updated.id);
-    },
-    remove: async (id) => {
-      await accounts.remove(id);
-      keepSingleDefault();
-    },
-  },
+  bankAccounts: bankAccountsSource,
   activity: { list: async (p) => query<ActivityEvent>(load('activity'), p) },
   support: {
     list: async (p) => query<SupportTicket>(load('support'), p),
