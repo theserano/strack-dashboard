@@ -136,6 +136,7 @@ function query<T extends object>(items: T[], p: ListParams = {}): ListResult<T> 
       Object.entries(row).some(([k, v]) => typeof v === 'string' && k !== 'id' && v.toLowerCase().includes(s))
     );
   }
+  if (p.customerId) rows = rows.filter((r) => (r as { customerId?: string }).customerId === p.customerId);
   if (p.status) rows = rows.filter((r) => (r as { status?: string }).status === p.status);
   if (p.type) rows = rows.filter((r) => (r as { type?: string }).type === p.type);
   if (p.from) {
@@ -288,6 +289,53 @@ const customers = crud<Customer, Omit<Customer, 'id' | 'createdAt'>>(
   }
 );
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Mirrors the server rules: trimmed fields, valid email (lowercased), unique email, length limits. */
+const cleanCustomer = (input: Partial<Omit<Customer, 'id' | 'createdAt'>>, partial: boolean, selfId?: Id) => {
+  const out: Partial<Omit<Customer, 'id' | 'createdAt'>> = {};
+  const str = (k: 'name' | 'email' | 'phone' | 'notes', max: number, required: boolean) => {
+    if (input[k] === undefined) {
+      if (required && !partial) fail(`${k === 'name' ? 'Name' : 'Email'} is required`);
+      return;
+    }
+    const v = String(input[k]).trim();
+    if (required && !v) fail(`${k === 'name' ? 'Name' : 'Email'} is required`);
+    if (v.length > max) fail(`${k} must be at most ${max} characters`);
+    out[k] = v;
+  };
+  str('name', 100, true);
+  str('email', 254, true);
+  str('phone', 30, false);
+  str('notes', 1000, false);
+  if (out.email !== undefined) {
+    if (!EMAIL_RE.test(out.email)) fail('Invalid email address');
+    out.email = out.email.toLowerCase();
+    if (load('customers').some((c) => c.id !== selfId && c.email.toLowerCase() === out.email)) {
+      fail('A customer with that email already exists', 409);
+    }
+  }
+  return out;
+};
+
+const customersCrud = customers;
+const customersSource: DataSource['customers'] = {
+  ...customersCrud,
+  // Search covers name, email and phone only (like the server).
+  list: async (p) => {
+    const s = p?.search?.trim().toLowerCase();
+    const rows = s
+      ? load('customers').filter((c) => [c.name, c.email, c.phone].some((v) => v?.toLowerCase().includes(s)))
+      : load('customers');
+    return query(rows, { ...p, search: undefined });
+  },
+  create: async (input) => customersCrud.create(cleanCustomer(input, false) as typeof input),
+  update: async (id, input) => {
+    findOrFail(load('customers'), id, 'Customer');
+    return customersCrud.update(id, cleanCustomer(input, true, id));
+  },
+};
+
 const links = crud<PaymentLink, Omit<PaymentLink, 'id' | 'createdAt' | 'slug'>>(
   'paymentLinks', 'lnk', 'payment link', (l) => l.title,
   (i) => ({ ...i, slug: `${i.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(36).slice(2, 6)}`, createdAt: nowIso() }),
@@ -328,7 +376,7 @@ const updateTransaction = (id: Id, patch: Partial<Transaction>, description: str
 };
 
 export const localSource: DataSource = {
-  customers,
+  customers: customersSource,
   paymentLinks: {
     ...links,
     simulatePayment: async (id, input) => {

@@ -23,5 +23,7 @@ const customerSchema = new Schema<ICustomer>(
 );
 
 customerSchema.index({ owner: 1, createdAt: -1 });
+// One customer per email per owner (emails are stored lowercase).
+customerSchema.index({ owner: 1, email: 1 }, { unique: true });
 
 export const CustomerModel = model<ICustomer>('Customer', customerSchema);

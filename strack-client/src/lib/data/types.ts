@@ -100,6 +100,8 @@ export interface ListParams {
   search?: string;
   status?: string;
   type?: string;
+  /** Transactions only: restrict to one customer. */
+  customerId?: Id;
   /** ISO dates, inclusive range. */
   from?: IsoDate;
   to?: IsoDate;

@@ -330,4 +330,42 @@ describe('stats.overview (local source)', () => {
     expect(o.transactionCount).toBe(250);
     expect(o.topCustomers).toHaveLength(5);
   });
+
+  describe('customers (server semantics)', () => {
+    it('trims, lowercases email and validates', async () => {
+      const c = await ds.customers.create({ name: '  Ada  ', email: ' ADA@Example.COM ' });
+      expect([c.name, c.email]).toEqual(['Ada', 'ada@example.com']);
+      await rejects(ds.customers.create({ name: ' ', email: 'x@y.com' }), 'Name is required');
+      await rejects(ds.customers.create({ name: 'X', email: 'nope' }), 'Invalid email');
+    });
+    it('rejects a duplicate email (case-insensitive) with 409, on create and update', async () => {
+      await ds.customers.create({ name: 'A', email: 'dup@t.com' });
+      const err = await ds.customers.create({ name: 'B', email: 'DUP@t.com' }).catch((e) => e);
+      expect(err.response.status).toBe(409);
+      const b = await ds.customers.create({ name: 'B', email: 'b@t.com' });
+      const err2 = await ds.customers.update(b.id, { email: 'dup@t.com' }).catch((e) => e);
+      expect(err2.response.status).toBe(409);
+      // Keeping your own email is fine.
+      await expect(ds.customers.update(b.id, { email: 'B@t.com', name: 'B2' })).resolves.toMatchObject({ name: 'B2' });
+    });
+    it('returns 404 for a missing customer on get/update/remove', async () => {
+      for (const p of [ds.customers.get('nope'), ds.customers.update('nope', { name: 'x' }), ds.customers.remove('nope')]) {
+        expect(((await p.catch((e) => e)) as { response: { status: number } }).response.status).toBe(404);
+      }
+    });
+    it('search matches name, email and phone but not notes', async () => {
+      const c = await ds.customers.create({ name: 'Zyx Person', email: 'zp@t.com', phone: '08099990000', notes: 'qqnoteqq' });
+      const ids = async (search: string) => (await ds.customers.list({ search })).items.map((x) => x.id);
+      expect(await ids('zyx per')).toContain(c.id);
+      expect(await ids('ZP@T')).toContain(c.id);
+      expect(await ids('0809999')).toContain(c.id);
+      expect(await ids('qqnoteqq')).toEqual([]);
+    });
+    it('filters transactions by customerId', async () => {
+      const t = (await all(ds.transactions)).find((x) => x.customerId)!;
+      const r = await ds.transactions.list({ customerId: t.customerId, limit: 10000 });
+      expect(r.items.length).toBeGreaterThan(0);
+      expect(r.items.every((x) => x.customerId === t.customerId)).toBe(true);
+    });
+  });
 });
