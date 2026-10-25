@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const DEFAULT_TZ = 'Africa/Lagos';
-const validTz = (v: string) => {
+export const DEFAULT_TZ = 'Africa/Lagos';
+export const validTz = (v: string) => {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: v });
     return true;

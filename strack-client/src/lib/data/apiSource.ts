@@ -29,7 +29,8 @@ export const apiSource: DataSource = {
     simulatePayment: (id, input) => create(`/payment-links/${id}/payments`, input ?? {}),
   },
   transactions: {
-    list: (p) => list('/transactions', p),
+    // from/to are local days: send the browser's time zone so the server uses the same day bounds.
+    list: (p) => list('/transactions', p && (p.from || p.to) ? withTimeZone(p) : p),
     get: (id) => get('/transactions', id),
     updateStatus: (id, status) => update('/transactions', id, { status }),
     addNote: (id, note) => update('/transactions', id, { note }),

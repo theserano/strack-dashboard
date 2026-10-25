@@ -441,3 +441,80 @@ describe('payment links (server semantics)', () => {
     expect((await ds.transactions.list()).total).toBe(n);
   });
 });
+
+describe('transactions page behaviour', () => {
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const day = (iso: string, delta = 0) => {
+    const d = new Date(iso);
+    d.setDate(d.getDate() + delta);
+    return ymd(d);
+  };
+  const L = { limit: 1000 };
+
+  it('from/to are inclusive local days', async () => {
+    const t = (await all(ds.transactions))[100];
+    const d = day(t.date);
+    const same = await ds.transactions.list({ from: d, to: d, ...L });
+    expect(same.items.map((x) => x.id)).toContain(t.id);
+    expect(same.items.every((x) => ymd(new Date(x.date)) === d)).toBe(true);
+    const before = await ds.transactions.list({ to: day(t.date, -1), ...L });
+    const after = await ds.transactions.list({ from: day(t.date, 1), ...L });
+    expect(before.items.map((x) => x.id)).not.toContain(t.id);
+    expect(after.items.map((x) => x.id)).not.toContain(t.id);
+    expect(before.total + same.total + after.total).toBe(250);
+  });
+
+  it('combines status, type, customer and link filters', async () => {
+    const txns = await all(ds.transactions);
+    const t = txns.find((x) => x.customerId && x.paymentLinkId)!;
+    const r = await ds.transactions.list({
+      customerId: t.customerId, paymentLinkId: t.paymentLinkId, status: t.status, type: t.type, ...L,
+    });
+    expect(r.items.map((x) => x.id)).toContain(t.id);
+    expect(r.items.every((x) => x.customerId === t.customerId && x.paymentLinkId === t.paymentLinkId && x.status === t.status && x.type === t.type)).toBe(true);
+  });
+
+  it('sorts by date descending by default', async () => {
+    const items = (await ds.transactions.list(L)).items;
+    expect(items.map((x) => x.date)).toEqual([...items.map((x) => x.date)].sort().reverse());
+  });
+
+  it('search matches reference and description only (case-insensitive)', async () => {
+    const t = (await all(ds.transactions))[3];
+    await ds.transactions.addNote(t.id, 'zzuniquenote');
+    expect((await ds.transactions.list({ search: t.reference.toLowerCase(), ...L })).items.map((x) => x.id)).toContain(t.id);
+    expect((await ds.transactions.list({ search: 'zzuniquenote', ...L })).total).toBe(0);
+    expect((await ds.transactions.list({ search: t.id, ...L })).total).toBe(0);
+    if (t.description) expect((await ds.transactions.list({ search: t.description.toUpperCase(), ...L })).items.map((x) => x.id)).toContain(t.id);
+  });
+
+  it('note: max 500 characters, trimmed, empty clears', async () => {
+    const t = (await all(ds.transactions))[0];
+    expect((await ds.transactions.addNote(t.id, 'x'.repeat(500))).note).toHaveLength(500);
+    await rejects(ds.transactions.addNote(t.id, 'x'.repeat(501)), 'at most 500');
+    expect((await ds.transactions.addNote(t.id, '  hi  ')).note).toBe('hi');
+    expect((await ds.transactions.addNote(t.id, '   ')).note).toBeUndefined();
+  });
+
+  it('refund creates a linked successful debit and blocks a second refund and un-succeeding the original', async () => {
+    const orig = (await all(ds.transactions)).find((t) => t.type === 'credit' && t.status === 'successful')!;
+    const before = getDemoBalance();
+    const r = await ds.transactions.refund(orig.id);
+    expect(r).toMatchObject({ type: 'debit', status: 'successful', amount: orig.amount, refundOf: orig.id });
+    expect(getDemoBalance()).toBe(before - orig.amount);
+    await rejects(ds.transactions.refund(orig.id), 'already been refunded');
+    await rejects(ds.transactions.updateStatus(orig.id, 'failed'), 'must stay successful');
+    await rejects(ds.transactions.refund(r.id), 'Only successful');
+  });
+
+  it('refund rejects when the balance is too low', async () => {
+    const orig = (await all(ds.transactions)).find((t) => t.type === 'credit' && t.status === 'successful')!;
+    const bal = getDemoBalance();
+    // Leave the balance (after the 1-unit remainder and the payout fee) below the refund amount.
+    const fee = (await ds.payouts.list({ limit: 1 })).items[0].fee;
+    await ds.payouts.create({ amount: bal - fee - 1, bankAccountId: 'bnk_001' });
+    expect(getDemoBalance()).toBe(1);
+    await rejects(ds.transactions.refund(orig.id), 'Insufficient balance');
+  });
+});

@@ -128,16 +128,20 @@ const bound = (v: string, end: boolean): string => {
   return (end ? new Date(y, mo, d, 23, 59, 59, 999) : new Date(y, mo, d, 0, 0, 0, 0)).toISOString();
 };
 
-function query<T extends object>(items: T[], p: ListParams = {}): ListResult<T> {
+function query<T extends object>(items: T[], p: ListParams = {}, searchKeys?: string[]): ListResult<T> {
   let rows = items;
   if (p.search) {
     const s = p.search.toLowerCase();
     rows = rows.filter((row) =>
-      Object.entries(row).some(([k, v]) => typeof v === 'string' && k !== 'id' && v.toLowerCase().includes(s))
+      Object.entries(row).some(
+        ([k, v]) =>
+          typeof v === 'string' && (searchKeys ? searchKeys.includes(k) : k !== 'id') && v.toLowerCase().includes(s)
+      )
     );
   }
   if (p.customerId) rows = rows.filter((r) => (r as { customerId?: string }).customerId === p.customerId);
   if (p.paymentLinkId) rows = rows.filter((r) => (r as { paymentLinkId?: string }).paymentLinkId === p.paymentLinkId);
+  if (p.refundOf) rows = rows.filter((r) => (r as { refundOf?: string }).refundOf === p.refundOf);
   if (p.status) rows = rows.filter((r) => (r as { status?: string }).status === p.status);
   if (p.type) rows = rows.filter((r) => (r as { type?: string }).type === p.type);
   if (p.from) {
@@ -455,6 +459,8 @@ const keepSingleDefault = (defaultId?: Id) => {
   save('bankAccounts', all.map((a) => ({ ...a, isDefault: a.id === id })));
 };
 
+const MAX_NOTE = 500;
+
 const updateTransaction = (id: Id, patch: Partial<Transaction>, description: string): Transaction => {
   const all = load('transactions');
   const item = { ...findOrFail(all, id, 'Transaction'), ...patch };
@@ -467,7 +473,8 @@ export const localSource: DataSource = {
   customers: customersSource,
   paymentLinks: linksSource,
   transactions: {
-    list: async (p) => query(load('transactions'), p),
+    // Same as the server: search matches reference and description only.
+    list: async (p) => query(load('transactions'), p, ['reference', 'description']),
     get: async (id) => findOrFail(load('transactions'), id, 'Transaction'),
     updateStatus: async (id, status: TransactionStatus) => {
       const all = load('transactions');
@@ -483,7 +490,12 @@ export const localSource: DataSource = {
       }
       return updateTransaction(id, { status }, `Marked transaction as ${status}`);
     },
-    addNote: async (id, note) => updateTransaction(id, { note }, 'Added a note to a transaction'),
+    addNote: async (id, note) => {
+      const n = note.trim();
+      if (n.length > MAX_NOTE) fail(`Note must be at most ${MAX_NOTE} characters`);
+      // An empty note clears it.
+      return updateTransaction(id, { note: n || undefined }, 'Updated the note on a transaction');
+    },
     refund: async (id) => {
       const all = load('transactions');
       const orig = findOrFail(all, id, 'Transaction');

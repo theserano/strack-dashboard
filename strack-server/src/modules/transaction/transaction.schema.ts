@@ -46,5 +46,10 @@ const transactionSchema = new Schema<ITransaction>(
 );
 
 transactionSchema.index({ owner: 1, createdAt: -1 });
+// Backstop for double refunds: at most one refund per original transaction.
+transactionSchema.index(
+  { owner: 1, refundOf: 1 },
+  { unique: true, partialFilterExpression: { refundOf: { $type: 'objectId' } } }
+);
 
 export const TransactionModel = model<ITransaction>('Transaction', transactionSchema);

@@ -13,7 +13,7 @@ type Interval = OverviewQuery['interval'];
 
 // Calendar days are carried as UTC-midnight Dates ("cal"); `bound` maps one to the real instant
 // at which that day starts in `tz`.
-const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+export const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 const tzOffsetMs = (at: Date, tz: string): number => {
   const parts = new Intl.DateTimeFormat('en-US', {

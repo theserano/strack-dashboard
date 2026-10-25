@@ -111,7 +111,7 @@ export function computeOverview(
 }
 
 /** Adds the browser's IANA time zone so the server buckets days the way the user sees them. */
-export const withTimeZone = (params: OverviewParams = {}, tz = Intl.DateTimeFormat().resolvedOptions().timeZone) => ({
+export const withTimeZone = <P extends object = OverviewParams>(params: P = {} as P, tz = Intl.DateTimeFormat().resolvedOptions().timeZone) => ({
   ...params,
   tz,
 });
