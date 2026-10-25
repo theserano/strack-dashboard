@@ -8,6 +8,8 @@ import paymentLinkRoutes from './src/modules/payment-link/payment-link.routes';
 import bankAccountRoutes from './src/modules/bank-account/bank-account.routes';
 import payoutRoutes from './src/modules/payout/payout.routes';
 import activityRoutes from './src/modules/activity/activity.routes';
+import supportRoutes from './src/modules/support/support.routes';
+import settingsRoutes from './src/modules/settings/settings.routes';
 
 const router = Router();
 
@@ -20,5 +22,7 @@ router.use('/transactions', transactionRoutes);
 router.use('/bank-accounts', bankAccountRoutes);
 router.use('/payouts', payoutRoutes);
 router.use('/activity', activityRoutes);
+router.use('/support', supportRoutes);
+router.use('/settings', settingsRoutes);
 
 export default router;

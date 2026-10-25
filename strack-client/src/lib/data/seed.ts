@@ -233,7 +233,7 @@ export function generateSeed(now: Date = new Date(), seed = 20260101): DemoData 
     support,
     user,
     settings: {
-      notifications: { email: true, transactions: true, security: true, marketing: false },
+      notifications: { emailOnPayment: true, emailOnPayout: true, weeklySummary: false },
       currency: 'NGN',
       theme: 'light',
     },

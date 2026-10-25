@@ -13,10 +13,12 @@ import type {
   PaymentLink,
   Payout,
   Settings,
+  SettingsUpdate,
   SupportTicket,
   Transaction,
   TransactionStatus,
 } from './types';
+import { TICKET_CATEGORIES, THEMES } from './types';
 
 /* ------------------------------------------
    STORAGE (localStorage under strack:demo:*, in-memory fallback)
@@ -99,6 +101,24 @@ const fail = (message: string, status = 400): never => {
 
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const newRef = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9).toUpperCase()}`;
+export const AUTO_REPLY = "Thanks, we've received your ticket. Our team will get back to you within 24 hours.";
+
+const DEFAULT_SETTINGS: Settings = {
+  notifications: { emailOnPayment: true, emailOnPayout: true, weeklySummary: false },
+  currency: 'NGN',
+  theme: 'light',
+};
+/** Demo data saved before the settings shape changed may hold old keys: keep only the known ones. */
+const loadSettings = (): Settings => {
+  const raw = (load('settings') ?? {}) as Partial<Settings>;
+  const n = (raw.notifications ?? {}) as Record<string, unknown>;
+  const notifications = { ...DEFAULT_SETTINGS.notifications };
+  for (const k of Object.keys(notifications) as (keyof typeof notifications)[]) {
+    if (typeof n[k] === 'boolean') notifications[k] = n[k] as boolean;
+  }
+  return { notifications, currency: 'NGN', theme: THEMES.includes(raw.theme as never) ? (raw.theme as Settings['theme']) : DEFAULT_SETTINGS.theme };
+};
+
 const nowIso = () => new Date().toISOString();
 
 const logActivity = (action: string, entity: string, entityId: Id, description: string) => {
@@ -618,17 +638,35 @@ export const localSource: DataSource = {
   // Like the server: search matches the description only.
   activity: { list: async (p) => query<ActivityEvent>(load('activity'), p, ['description']) },
   support: {
-    list: async (p) => query<SupportTicket>(load('support'), p),
+    list: async (p) => query<SupportTicket>(load('support'), p, ['subject']),
     get: async (id) => findOrFail(load('support'), id, 'Ticket'),
     create: async (input) => {
-      const ticket: SupportTicket = { id: newId('tkt'), ...input, status: 'open', replies: [], createdAt: nowIso() };
+      const subject = input.subject?.trim() ?? '';
+      const message = input.message?.trim() ?? '';
+      if (subject.length < 3 || subject.length > 120) fail('Subject must be between 3 and 120 characters');
+      if (!(TICKET_CATEGORIES as readonly string[]).includes(input.category)) fail('Choose a valid category');
+      if (message.length < 10 || message.length > 2000) fail('Message must be between 10 and 2000 characters');
+      const now = nowIso();
+      const ticket: SupportTicket = {
+        id: newId('tkt'),
+        subject,
+        category: input.category,
+        message,
+        status: 'open',
+        // Same as the server: every new ticket is acknowledged straight away.
+        replies: [{ id: newId('rep'), message: AUTO_REPLY, from: 'support', date: now }],
+        createdAt: now,
+      };
       save('support', [...load('support'), ticket]);
       logActivity('create', 'support_ticket', ticket.id, `Opened ticket "${ticket.subject}"`);
       return ticket;
     },
-    reply: async (id, message) => {
+    reply: async (id, rawMessage) => {
+      const message = rawMessage?.trim() ?? '';
+      if (message.length < 1 || message.length > 2000) fail('Reply must be between 1 and 2000 characters');
       const all = load('support');
       const t = findOrFail(all, id, 'Ticket');
+      if (t.status === 'closed') fail('This ticket is closed', 409);
       const next = { ...t, replies: [...t.replies, { id: newId('rep'), message, from: 'user' as const, date: nowIso() }] };
       save('support', all.map((x) => (x.id === id ? next : x)));
       logActivity('update', 'support_ticket', id, `Replied to ticket "${t.subject}"`);
@@ -636,7 +674,9 @@ export const localSource: DataSource = {
     },
     close: async (id) => {
       const all = load('support');
-      const next = { ...findOrFail(all, id, 'Ticket'), status: 'closed' as const };
+      const t = findOrFail(all, id, 'Ticket');
+      if (t.status === 'closed') return t; // idempotent, like the server
+      const next = { ...t, status: 'closed' as const };
       save('support', all.map((x) => (x.id === id ? next : x)));
       logActivity('update', 'support_ticket', id, `Closed ticket "${next.subject}"`);
       return next;
@@ -644,6 +684,7 @@ export const localSource: DataSource = {
   },
   user: {
     get: async () => load('user'),
+    changePassword: async () => fail("Password change isn't available in demo mode"),
     update: async (data) => {
       const current = load('user');
       assertEditable(current);
@@ -687,11 +728,24 @@ export const localSource: DataSource = {
     },
   },
   settings: {
-    get: async () => load('settings'),
-    update: async (input: Partial<Settings>) => {
-      const next = { ...load('settings'), ...input };
+    get: async () => loadSettings(),
+    update: async (input: SettingsUpdate) => {
+      const cur = loadSettings();
+      const known = Object.keys(cur.notifications);
+      const unknown = Object.keys(input).filter((k) => k !== 'notifications' && k !== 'theme');
+      if (unknown.length) fail(`Unknown setting: ${unknown[0]}`);
+      for (const [k, v] of Object.entries(input.notifications ?? {})) {
+        if (!known.includes(k)) fail(`Unknown notification setting: ${k}`);
+        if (typeof v !== 'boolean') fail(`${k} must be true or false`);
+      }
+      if (input.theme !== undefined && !THEMES.includes(input.theme)) fail('Theme must be light, dark or system');
+      const next: Settings = {
+        ...cur,
+        notifications: { ...cur.notifications, ...(input.notifications ?? {}) },
+        theme: input.theme ?? cur.theme,
+      };
       save('settings', next);
-      logActivity('update', 'settings', 'settings', 'Updated settings');
+      logActivity('update', 'settings', DEMO_USER_ID, 'Updated settings');
       return next;
     },
   },

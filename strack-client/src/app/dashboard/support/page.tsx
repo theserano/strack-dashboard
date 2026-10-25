@@ -3,14 +3,32 @@
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
-import {
-  FileQuestion,
-  Mail,
-  MessageCircle,
-  Phone,
-  Send,
-} from 'lucide-react';
-import { useState } from 'react';
+import CustomSelect from '@/lib/components/CustomSelect';
+import DataTable, { type Column } from '@/lib/components/DataTable';
+import Drawer from '@/lib/components/Drawer';
+import Modal from '@/lib/components/Modal';
+import ConfirmDialog from '@/lib/components/ConfirmDialog';
+import StatusBadge from '@/lib/components/StatusBadge';
+import { useAppSelector } from '@/lib/hook';
+import { useSupportTickets } from '@/lib/hooks/useSupportTickets';
+import { getDataSource } from '@/lib/data';
+import { TICKET_CATEGORIES, type SupportTicket, type TicketCategory } from '@/lib/data/types';
+import { getErrorMessage } from '@/lib/features/user/thunkActions';
+import { showToast } from '@/lib/utils/plainFunctions';
+import { FileQuestion, Mail, MessageCircle, Phone, Plus, Send } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+
+const LIMIT = 10;
+const fmtDateTime = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const CATEGORY_OPTIONS = TICKET_CATEGORIES.map((c) => ({ value: c, label: cap(c) }));
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
+];
+const textarea =
+  'w-full px-3 py-2 border border-[#E1E4EA] rounded-lg text-sm resize-none focus:outline-none focus:border-[#020C14] placeholder:text-[#99A0AE]';
 
 const faqItems = [
   {
@@ -40,17 +58,208 @@ const faqItems = [
   },
 ];
 
-export default function SupportPage() {
+
+function NewTicketModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (t: SupportTicket) => void }) {
+  const mode = useAppSelector((s) => s.auth.mode);
   const [subject, setSubject] = useState('');
+  const [category, setCategory] = useState<TicketCategory>('account');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+
+  useEffect(() => {
+    if (open) {
+      setSubject('');
+      setCategory('account');
+      setMessage('');
+      setError(null);
+    }
+  }, [open]);
+
+  const submit = async () => {
+    if (submitting.current) return;
+    const s = subject.trim();
+    const m = message.trim();
+    if (s.length < 3 || s.length > 120) return setError('Subject must be between 3 and 120 characters');
+    if (m.length < 10 || m.length > 2000) return setError('Message must be between 10 and 2000 characters');
+    setError(null);
+    submitting.current = true;
+    setBusy(true);
+    try {
+      const t = await getDataSource(mode).support.create({ subject: s, category, message: m });
+      showToast({ message: 'Ticket opened', description: "We've received your ticket." });
+      onCreated(t);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => !busy && onClose()}
+      title="New ticket"
+      footer={
+        <>
+          <CustomButton text="Cancel" className="!w-auto px-4 !h-9 text-sm" onClick={onClose} disabled={busy} />
+          <CustomButton text="Submit ticket" icon={<Send className="w-4 h-4" />} className="!w-auto px-4 !h-9 text-sm" onClick={submit} isLoading={busy} disabled={busy} />
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <CustomInput id="ticket-subject" label="Subject" value={subject} onChange={setSubject} placeholder="What do you need help with?" maxLength={120} required />
+        <CustomSelect id="ticket-category" label="Category" value={category} options={CATEGORY_OPTIONS} onChange={(v) => setCategory(v as TicketCategory)} />
+        <div className="grid w-full items-center gap-2">
+          <label className="text-sm font-medium" htmlFor="ticket-message">
+            Message
+          </label>
+          <textarea id="ticket-message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Describe your issue in detail..." rows={5} maxLength={2000} className={textarea} />
+          <p className="text-xs text-[#99A0AE]">{message.trim().length}/2000 (at least 10 characters)</p>
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function TicketDrawer({ ticket, onClose, onChanged }: { ticket: SupportTicket | null; onClose: () => void; onChanged: (t: SupportTicket) => void }) {
+  const mode = useAppSelector((s) => s.auth.mode);
+  const [reply, setReply] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const submitting = useRef(false);
+  const id = ticket?.id;
+
+  useEffect(() => {
+    setReply('');
+    setError(null);
+    setConfirming(false);
+  }, [id]);
+
+  const run = async (fn: () => Promise<SupportTicket>, done?: () => void) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      onChanged(await fn());
+      done?.();
+    } catch (e) {
+      setError(getErrorMessage(e));
+      setConfirming(false);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+
+  const send = () => {
+    if (!ticket) return;
+    const m = reply.trim();
+    if (!m) return setError('Write a reply first');
+    void run(() => getDataSource(mode).support.reply(ticket.id, m), () => setReply(''));
+  };
+  const close = () => {
+    if (!ticket) return;
+    void run(() => getDataSource(mode).support.close(ticket.id), () => {
+      setConfirming(false);
+      showToast({ message: 'Ticket closed', description: 'You can open a new ticket any time.' });
+    });
+  };
+
+  const closed = ticket?.status === 'closed';
+  return (
+    <Drawer open={!!ticket} onClose={onClose} title={ticket?.subject ?? 'Ticket'}>
+      {ticket && (
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 text-xs text-[#525866]">
+            <StatusBadge status={ticket.status} />
+            <span>{cap(ticket.category)}</span>
+            <span>Opened {fmtDateTime(ticket.createdAt)}</span>
+          </div>
+          <ol className="space-y-3" aria-label="Conversation">
+            <li className="rounded-lg bg-[#F7F9FC] p-3">
+              <p className="text-xs font-medium text-[#525866]">You</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-[#0E121B]">{ticket.message}</p>
+            </li>
+            {ticket.replies.map((r) => (
+              <li key={r.id} className={`rounded-lg p-3 ${r.from === 'support' ? 'border border-[#E1E4EA] bg-white' : 'bg-[#F7F9FC]'}`}>
+                <p className="text-xs font-medium text-[#525866]">
+                  {r.from === 'support' ? 'Support' : 'You'} <span className="font-normal text-[#99A0AE]">{fmtDateTime(r.date)}</span>
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-[#0E121B]">{r.message}</p>
+              </li>
+            ))}
+          </ol>
+          {closed ? (
+            <p className="text-sm text-[#525866]">This ticket is closed. Open a new ticket if you still need help.</p>
+          ) : (
+            <div className="space-y-3">
+              <label className="text-sm font-medium" htmlFor="ticket-reply">
+                Reply
+              </label>
+              <textarea id="ticket-reply" value={reply} onChange={(e) => setReply(e.target.value)} rows={4} maxLength={2000} placeholder="Write a reply..." className={textarea} disabled={busy} />
+              <div className="flex gap-2">
+                <CustomButton text="Send reply" icon={<Send className="w-4 h-4" />} className="!w-auto px-4 !h-9 text-sm" onClick={send} isLoading={busy && !confirming} disabled={busy} />
+                <CustomButton text="Close ticket" className="!w-auto px-4 !h-9 text-sm" onClick={() => setConfirming(true)} disabled={busy} />
+              </div>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-red-600">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        title="Close this ticket?"
+        message="You won't be able to reply once it is closed."
+        confirmLabel="Close ticket"
+        destructive
+        loading={busy}
+        onConfirm={close}
+        onCancel={() => setConfirming(false)}
+      />
+    </Drawer>
+  );
+}
+
+export default function SupportPage() {
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<SupportTicket | null>(null);
+  const mode = useAppSelector((s) => s.auth.mode);
+  const { data, error, loading, refetch } = useSupportTickets({ page, limit: LIMIT, status: status || undefined });
+
+  useEffect(() => {
+    setSelected(null);
+    setPage(1);
+  }, [mode]);
+
+  const columns: Column<SupportTicket>[] = [
+    { key: 'subject', header: 'Subject', render: (t) => <span className="font-medium text-[#0E121B]">{t.subject}</span> },
+    { key: 'category', header: 'Category', render: (t) => cap(t.category) },
+    { key: 'status', header: 'Status', render: (t) => <StatusBadge status={t.status} /> },
+    { key: 'replies', header: 'Replies', render: (t) => t.replies.length },
+    { key: 'createdAt', header: 'Opened', render: (t) => fmtDateTime(t.createdAt) },
+  ];
 
   return (
     <main>
-      <HeaderSearch
-        headerText="Support"
-        headerDescription="Get help with your account and services"
-      />
+      <HeaderSearch headerText="Support" headerDescription="Get help with your account and services" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
         {[
@@ -76,8 +285,38 @@ export default function SupportPage() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-8">
-        <section className="lg:col-span-3 border border-[#E1E4EA] rounded-xl bg-white">
+
+      <section className="mt-8">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h3 className="text-base font-semibold text-[#0E121B]">Your tickets</h3>
+          <div className="flex items-end gap-3">
+            <div className="w-[160px]">
+              <CustomSelect id="ticket-status-filter" value={status} options={STATUS_OPTIONS} onChange={(v) => { setStatus(v); setPage(1); }} />
+            </div>
+            <CustomButton text="New ticket" icon={<Plus className="w-4 h-4" />} className="!w-auto px-4 !h-10 text-sm" onClick={() => setCreating(true)} />
+          </div>
+        </div>
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-red-600">
+            {error}
+          </p>
+        )}
+        <div className="mt-4">
+          <DataTable
+            columns={columns}
+            rows={data?.items ?? []}
+            rowKey={(t) => t.id}
+            loading={loading}
+            onRowClick={setSelected}
+            pagination={{ page, limit: LIMIT, total: data?.total ?? 0, onPageChange: setPage }}
+            emptyTitle={status ? 'No tickets match this filter' : 'No tickets yet'}
+            emptyDescription={status ? 'Try a different status.' : 'Open a ticket and our team will get back to you.'}
+          />
+        </div>
+      </section>
+
+      <div className="mt-8">
+        <section className="border border-[#E1E4EA] rounded-xl bg-white">
           <div className="p-5 border-b border-[#E1E4EA]">
             <h3 className="text-base font-semibold text-[#0E121B] flex items-center gap-2">
               <FileQuestion className="w-5 h-5" />
@@ -118,40 +357,26 @@ export default function SupportPage() {
           </div>
         </section>
 
-        <section className="lg:col-span-2 border border-[#E1E4EA] rounded-xl bg-white h-fit">
-          <div className="p-5 border-b border-[#E1E4EA]">
-            <h3 className="text-base font-semibold text-[#0E121B] flex items-center gap-2">
-              <Send className="w-5 h-5" />
-              Send a Message
-            </h3>
-            <p className="text-sm text-[#525866]">We&apos;ll get back to you within 24 hours</p>
-          </div>
-          <div className="p-5 space-y-4">
-            <CustomInput
-              id="support-subject"
-              label="Subject"
-              value={subject}
-              onChange={setSubject}
-              placeholder="What do you need help with?"
-              required
-            />
-            <div className="grid w-full items-center gap-2">
-              <label className="text-sm font-medium" htmlFor="support-message">
-                Message
-              </label>
-              <textarea
-                id="support-message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Describe your issue in detail..."
-                rows={5}
-                className="w-full px-3 py-2 border border-[#E1E4EA] rounded-lg text-sm resize-none focus:outline-none focus:border-[#020C14] placeholder:text-[#99A0AE]"
-              />
-            </div>
-            <CustomButton text="Send Message" icon={<Send className="w-4 h-4" />} />
-          </div>
-        </section>
       </div>
+
+      <NewTicketModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(t) => {
+          setCreating(false);
+          setSelected(t);
+          setPage(1);
+          refetch();
+        }}
+      />
+      <TicketDrawer
+        ticket={selected}
+        onClose={() => setSelected(null)}
+        onChanged={(t) => {
+          setSelected(t);
+          refetch();
+        }}
+      />
     </main>
   );
 }

@@ -18,7 +18,16 @@ export interface BaseUser extends Document {
   documents?: Partial<Record<DocumentType, StoredDocument>>;
   complianceStatus: ComplianceStatus;
   verified: boolean;
+  settings?: {
+    notifications?: { emailOnPayment?: boolean; emailOnPayout?: boolean; weeklySummary?: boolean };
+    theme?: 'light' | 'dark' | 'system';
+  };
 }
+
+export const DEFAULT_SETTINGS = {
+  notifications: { emailOnPayment: true, emailOnPayout: true, weeklySummary: false },
+  theme: 'light' as 'light' | 'dark' | 'system',
+};
 
 export const DOCUMENT_TYPES = ["cac", "memorandum", "utility", "validId"] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
@@ -82,6 +91,21 @@ const baseUserSchema = new Schema<BaseUser>(
       default: "not_started",
     },
     verified: { type: Boolean, default: false },
+    // Currency is fixed to NGN and not stored. Missing on older accounts: the settings service fills defaults.
+    settings: {
+      type: new Schema(
+        {
+          notifications: {
+            emailOnPayment: { type: Boolean, default: DEFAULT_SETTINGS.notifications.emailOnPayment },
+            emailOnPayout: { type: Boolean, default: DEFAULT_SETTINGS.notifications.emailOnPayout },
+            weeklySummary: { type: Boolean, default: DEFAULT_SETTINGS.notifications.weeklySummary },
+          },
+          theme: { type: String, enum: ['light', 'dark', 'system'], default: DEFAULT_SETTINGS.theme },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
   },
   {
     timestamps: true,

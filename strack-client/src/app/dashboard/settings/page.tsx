@@ -3,31 +3,295 @@
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
-import { useAppSelector } from '@/lib/hook';
+import CustomSelect from '@/lib/components/CustomSelect';
+import { useAppDispatch, useAppSelector } from '@/lib/hook';
 import { useResetDemo } from '@/lib/components/DemoBanner';
-import { Camera, Key, Shield, User } from 'lucide-react';
-import { useState } from 'react';
+import { useSettings } from '@/lib/hooks/useSettings';
+import { getDataSource } from '@/lib/data';
+import { passwordFormError, passwordStrength } from '@/lib/data/passwordForm';
+import type { NotificationPrefs, Theme } from '@/lib/data/types';
+import { getErrorMessage, updateUser, type UpdateUserData } from '@/lib/features/user/thunkActions';
+import { showToast } from '@/lib/utils/plainFunctions';
+import { Eye, EyeOff, Key, Lock, Palette, Shield, User, Bell } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
-const tabs = ['Profile', 'Security', 'Notifications', 'API Keys'] as const;
+const tabs = ['Profile', 'Security', 'Notifications', 'Appearance', 'API Keys'] as const;
 type Tab = (typeof tabs)[number];
 
 const tabIcons: Record<Tab, React.ElementType> = {
   Profile: User,
   Security: Shield,
-  Notifications: Camera,
+  Notifications: Bell,
+  Appearance: Palette,
   'API Keys': Key,
 };
 
+const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; label: string; desc: string }[] = [
+  { key: 'emailOnPayment', label: 'Email on payment', desc: 'Get an email whenever you receive a payment' },
+  { key: 'emailOnPayout', label: 'Email on payout', desc: 'Get an email when a payout is made to your bank account' },
+  { key: 'weeklySummary', label: 'Weekly summary', desc: 'A weekly email with your revenue and payouts' },
+];
+
+const THEME_OPTIONS = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
+];
+
+const applyTheme = (theme: Theme) => {
+  const dark = theme === 'dark' || (theme === 'system' && globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', !!dark);
+};
+
+const Card = ({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) => (
+  <section className="border border-[#E1E4EA] rounded-xl bg-white">
+    <div className="p-5 border-b border-[#E1E4EA]">
+      <h3 className="text-base font-semibold text-[#0E121B]">{title}</h3>
+      <p className="text-sm text-[#525866]">{desc}</p>
+    </div>
+    <div className="p-5">{children}</div>
+  </section>
+);
+
+function ProfileSection() {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.user.user);
+  const saving = useAppSelector((s) => s.user.saving);
+  const locked = user?.complianceStatus === 'pending_review' || user?.complianceStatus === 'approved';
+  const business = user?.accountType === 'business';
+  const initial = {
+    firstName: user?.firstName ?? '',
+    lastName: user?.lastName ?? '',
+    email: user?.email ?? '',
+    phone: user?.phone ?? '',
+    businessName: user?.businessName ?? '',
+    businessEmail: user?.businessEmail ?? '',
+  };
+  const [form, setForm] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const submitting = useRef(false);
+  const set = (k: keyof typeof initial) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Keep the form in step with the stored profile once it has loaded or been saved.
+  useEffect(() => {
+    setForm(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const save = async () => {
+    if (submitting.current || locked) return;
+    if (!user?._id) return setError('Your session has expired. Please log in again.');
+    const data: UpdateUserData = {};
+    const keys: (keyof typeof initial)[] = business
+      ? ['firstName', 'lastName', 'email', 'phone', 'businessName', 'businessEmail']
+      : ['firstName', 'lastName', 'email', 'phone'];
+    for (const k of keys) {
+      const v = form[k].trim();
+      if (!v) return setError('Fill in every field');
+      if (v !== initial[k]) data[k] = v;
+    }
+    if (!Object.keys(data).length) return setError('Nothing to save');
+    setError(null);
+    submitting.current = true;
+    try {
+      const r = await dispatch(updateUser({ userId: user._id, data }));
+      if (updateUser.fulfilled.match(r)) showToast({ message: 'Saved', description: 'Your profile has been updated.' });
+      else setError(String(r.payload ?? 'Could not save your profile.'));
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  return (
+    <Card title="Profile Information" desc="Update your personal details">
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-16 h-16 rounded-full bg-[#020C14] flex items-center justify-center text-white text-xl font-medium">
+          {(user?.firstName?.[0] || 'U') + (user?.lastName?.[0] || '')}
+        </div>
+        <div>
+          <p className="text-sm font-medium text-[#0E121B]">
+            {user?.firstName} {user?.lastName}
+          </p>
+          <p className="text-xs text-[#99A0AE]">{user?.email}</p>
+        </div>
+      </div>
+      {locked && (
+        <p role="status" className="mb-5 max-w-[600px] rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <Lock className="mr-1 inline h-4 w-4" />
+          Your details are under review or approved, so they can no longer be edited here. Contact support if something needs to change.
+        </p>
+      )}
+      <fieldset disabled={locked} className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-[600px] disabled:opacity-60">
+        <CustomInput id="settings-firstName" label="First name" value={form.firstName} onChange={set('firstName')} placeholder="First name" />
+        <CustomInput id="settings-lastName" label="Last name" value={form.lastName} onChange={set('lastName')} placeholder="Last name" />
+        <CustomInput id="settings-email" label="Email" value={form.email} onChange={set('email')} placeholder="Email" type="email" />
+        <CustomInput id="settings-phone" label="Phone number" value={form.phone} onChange={set('phone')} placeholder="Phone number" />
+        {business && (
+          <>
+            <CustomInput id="settings-businessName" label="Business name" value={form.businessName} onChange={set('businessName')} placeholder="Business name" />
+            <CustomInput id="settings-businessEmail" label="Business email" value={form.businessEmail} onChange={set('businessEmail')} placeholder="Business email" type="email" />
+          </>
+        )}
+      </fieldset>
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-red-600">
+          {error}
+        </p>
+      )}
+      <div className="mt-6">
+        <CustomButton text="Save Changes" className="!w-auto px-6" onClick={save} isLoading={saving} disabled={saving || locked} />
+      </div>
+    </Card>
+  );
+}
+
+function PasswordField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (v: string) => void }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="grid w-full items-center gap-2">
+      <label className="text-sm font-medium" htmlFor={id}>
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={id === 'pw-current' ? 'current-password' : 'new-password'}
+          className="w-full rounded-lg border border-[#E1E4EA] px-3 py-2 pr-10 text-sm focus:border-[#020C14] focus:outline-none disabled:opacity-60"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#525866]"
+        >
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SecuritySection({ demo }: { demo: boolean }) {
+  const mode = useAppSelector((s) => s.auth.mode);
+  const [f, setF] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const strength = passwordStrength(f.newPassword);
+  const set = (k: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting.current || demo) return;
+    const problem = passwordFormError(f);
+    if (problem) return setError(problem);
+    setError(null);
+    submitting.current = true;
+    setBusy(true);
+    try {
+      await getDataSource(mode).user.changePassword({ currentPassword: f.currentPassword, newPassword: f.newPassword });
+      setF({ currentPassword: '', newPassword: '', confirm: '' });
+      showToast({ message: 'Password changed', description: 'Use your new password the next time you log in.' });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Security Settings" desc="Change your password">
+      {demo && (
+        <p role="status" className="mb-5 max-w-[420px] rounded-lg border border-[#E1E4EA] bg-[#F7F9FC] p-3 text-sm text-[#525866]">
+          Password change isn&apos;t available in demo mode.
+        </p>
+      )}
+      <form onSubmit={submit} className="max-w-[420px] space-y-4">
+        <fieldset disabled={demo || busy} className="space-y-4">
+          <PasswordField id="pw-current" label="Current password" value={f.currentPassword} onChange={set('currentPassword')} />
+          <PasswordField id="pw-new" label="New password" value={f.newPassword} onChange={set('newPassword')} />
+          {f.newPassword && (
+            <p className="text-xs text-[#525866]" aria-live="polite">
+              Strength: <span className="font-medium">{strength.label}</span>. Use at least 8 characters; mixing upper and lower case, numbers and symbols makes it stronger.
+            </p>
+          )}
+          <PasswordField id="pw-confirm" label="Confirm new password" value={f.confirm} onChange={set('confirm')} />
+        </fieldset>
+        {error && (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        )}
+        <CustomButton text="Change password" type="submit" className="!w-auto px-6" isLoading={busy} disabled={demo || busy} />
+      </form>
+    </Card>
+  );
+}
+
+function NotificationsSection() {
+  const { settings, error, saving, update } = useSettings();
+  const toggle = async (key: keyof NotificationPrefs) => {
+    if (!settings || saving) return;
+    const err = await update({ notifications: { [key]: !settings.notifications[key] } });
+    showToast(err ? { message: 'Error', description: err } : { message: 'Saved', description: 'Notification preference updated.' });
+  };
+  return (
+    <Card title="Notification Preferences" desc="Choose how you want to be notified. Changes save immediately.">
+      {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
+      <div className="space-y-4">
+        {NOTIFICATION_ITEMS.map((item) => (
+          <div key={item.key} className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-[#0E121B]">{item.label}</p>
+              <p className="text-xs text-[#99A0AE]">{item.desc}</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label={item.label}
+                className="sr-only peer"
+                checked={settings?.notifications[item.key] ?? false}
+                disabled={!settings || saving}
+                onChange={() => toggle(item.key)}
+              />
+              <div className="w-9 h-5 bg-[#E1E4EA] peer-checked:bg-[#020C14] peer-disabled:opacity-50 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+            </label>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AppearanceSection() {
+  const { settings, error, saving, update } = useSettings();
+  useEffect(() => {
+    if (settings) applyTheme(settings.theme);
+  }, [settings]);
+  const change = async (theme: string) => {
+    if (saving) return;
+    const err = await update({ theme: theme as Theme });
+    showToast(err ? { message: 'Error', description: err } : { message: 'Saved', description: 'Theme updated.' });
+  };
+  return (
+    <Card title="Appearance" desc="Choose a theme. Currency is fixed to Nigerian naira (NGN).">
+      {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
+      <div className="max-w-[260px]">
+        <CustomSelect id="settings-theme" label="Theme" value={settings?.theme ?? 'light'} options={THEME_OPTIONS} onChange={change} disabled={!settings || saving} />
+      </div>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Profile');
-  const { user } = useAppSelector((state) => state.user);
   const demo = useAppSelector((state) => state.auth.mode) === 'demo';
   const { openReset, dialog: resetDialog } = useResetDemo();
-
-  const [firstName, setFirstName] = useState(user?.firstName || '');
-  const [lastName, setLastName] = useState(user?.lastName || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState(user?.phone || '');
 
   return (
     <main>
@@ -71,130 +335,10 @@ export default function SettingsPage() {
           )}
           {resetDialog}
 
-          {activeTab === 'Profile' && (
-            <section className="border border-[#E1E4EA] rounded-xl bg-white">
-              <div className="p-5 border-b border-[#E1E4EA]">
-                <h3 className="text-base font-semibold text-[#0E121B]">Profile Information</h3>
-                <p className="text-sm text-[#525866]">Update your personal details</p>
-              </div>
-
-              <div className="p-5">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-16 h-16 rounded-full bg-[#020C14] flex items-center justify-center text-white text-xl font-medium">
-                    {(user?.firstName?.[0] || 'U') + (user?.lastName?.[0] || '')}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-[#0E121B]">
-                      {user?.firstName} {user?.lastName}
-                    </p>
-                    <p className="text-xs text-[#99A0AE]">{user?.email}</p>
-                    <button className="text-xs text-[#020C14] font-medium mt-1 hover:underline">
-                      Change photo
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-[600px]">
-                  <CustomInput
-                    id="settings-firstName"
-                    label="First name"
-                    value={firstName}
-                    onChange={setFirstName}
-                    placeholder="First name"
-                  />
-                  <CustomInput
-                    id="settings-lastName"
-                    label="Last name"
-                    value={lastName}
-                    onChange={setLastName}
-                    placeholder="Last name"
-                  />
-                  <CustomInput
-                    id="settings-email"
-                    label="Email"
-                    value={email}
-                    onChange={setEmail}
-                    placeholder="Email"
-                    type="email"
-                  />
-                  <CustomInput
-                    id="settings-phone"
-                    label="Phone number"
-                    value={phone}
-                    onChange={setPhone}
-                    placeholder="Phone number"
-                  />
-                </div>
-
-                <div className="mt-8">
-                  <CustomButton text="Save Changes" className="!w-auto px-6" />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeTab === 'Security' && (
-            <section className="border border-[#E1E4EA] rounded-xl bg-white">
-              <div className="p-5 border-b border-[#E1E4EA]">
-                <h3 className="text-base font-semibold text-[#0E121B]">Security Settings</h3>
-                <p className="text-sm text-[#525866]">Manage your password and security preferences</p>
-              </div>
-              <div className="p-5 space-y-6">
-                <div className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-[#0E121B]">Password</p>
-                    <p className="text-xs text-[#99A0AE]">Last changed: Never</p>
-                  </div>
-                  <CustomButton text="Change Password" className="!w-auto px-4 !h-9 text-sm" />
-                </div>
-                <div className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-[#0E121B]">Two-factor authentication</p>
-                    <p className="text-xs text-[#99A0AE]">Add an extra layer of security</p>
-                  </div>
-                  <CustomButton text="Enable" className="!w-auto px-4 !h-9 text-sm" />
-                </div>
-                <div className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-[#0E121B]">Active Sessions</p>
-                    <p className="text-xs text-[#99A0AE]">Manage your active sessions</p>
-                  </div>
-                  <CustomButton text="View Sessions" className="!w-auto px-4 !h-9 text-sm" />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeTab === 'Notifications' && (
-            <section className="border border-[#E1E4EA] rounded-xl bg-white">
-              <div className="p-5 border-b border-[#E1E4EA]">
-                <h3 className="text-base font-semibold text-[#0E121B]">Notification Preferences</h3>
-                <p className="text-sm text-[#525866]">Choose how you want to be notified</p>
-              </div>
-              <div className="p-5 space-y-4">
-                {[
-                  { label: 'Email notifications', desc: 'Receive email updates about your account' },
-                  { label: 'Transaction alerts', desc: 'Get notified for every transaction' },
-                  { label: 'Security alerts', desc: 'Login attempts and security changes' },
-                  { label: 'Marketing emails', desc: 'Product updates and promotional content' },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-[#0E121B]">{item.label}</p>
-                      <p className="text-xs text-[#99A0AE]">{item.desc}</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-9 h-5 bg-[#E1E4EA] peer-checked:bg-[#020C14] rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          {activeTab === 'Profile' && <ProfileSection />}
+          {activeTab === 'Security' && <SecuritySection demo={demo} />}
+          {activeTab === 'Notifications' && <NotificationsSection />}
+          {activeTab === 'Appearance' && <AppearanceSection />}
 
           {activeTab === 'API Keys' && (
             <section className="border border-[#E1E4EA] rounded-xl bg-white">

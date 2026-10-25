@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
+import { changePasswordSchema } from './auth.schema';
+import { HttpError, toErrorResponse } from '../../utils/httpError';
 import {
+  changePasswordService,
   loginService,
   logoutService,
   refreshTokenService,
@@ -87,5 +90,20 @@ export const logoutController = async (req: Request, res: Response) => {
     res.status(500).json({
       message: error instanceof Error ? error.message : 'Internal Server Error',
     });
+  }
+};
+
+export const changePasswordController = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId; // owner comes from the access token, never from the body
+    if (!userId) throw new HttpError(401, 'Unauthorized');
+    const r = changePasswordSchema.safeParse(req.body);
+    if (!r.success) throw new HttpError(400, r.error.issues[0]?.message ?? 'Invalid request');
+    await changePasswordService(userId, r.data);
+    res.status(200).json({ message: 'Password changed successfully', data: null });
+  } catch (error) {
+    const { status, message } = toErrorResponse(error);
+    if (status >= 500) console.error(error);
+    res.status(status).json({ message });
   }
 };

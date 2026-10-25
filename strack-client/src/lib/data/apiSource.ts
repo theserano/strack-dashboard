@@ -51,6 +51,9 @@ export const apiSource: DataSource = {
         })
       );
     },
+    changePassword: async (input) => {
+      await api.post('/auth/password', input);
+    },
     submitCompliance: (userId) => unwrap(api.post('/user/compliance/submit', {}, { params: { userId } })),
   },
   stats: { overview: (params) => unwrap(api.get('/stats/overview', { params: withTimeZone(params) })) },

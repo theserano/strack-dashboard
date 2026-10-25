@@ -87,17 +87,32 @@ export interface TicketReply {
 export interface SupportTicket {
   id: Id;
   subject: string;
-  category: string;
+  category: TicketCategory;
   message: string;
   status: TicketStatus;
   replies: TicketReply[];
   createdAt: IsoDate;
 }
 
+export const TICKET_CATEGORIES = ['account', 'billing', 'payments', 'payouts', 'technical', 'other'] as const;
+export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
+
+export const THEMES = ['light', 'dark', 'system'] as const;
+export type Theme = 'light' | 'dark' | 'system';
+export interface NotificationPrefs {
+  emailOnPayment: boolean;
+  emailOnPayout: boolean;
+  weeklySummary: boolean;
+}
 export interface Settings {
-  notifications: Record<string, boolean>;
-  currency: string;
-  theme: 'light' | 'dark' | 'system';
+  notifications: NotificationPrefs;
+  /** Fixed to NGN. */
+  currency: 'NGN';
+  theme: Theme;
+}
+export interface SettingsUpdate {
+  notifications?: Partial<NotificationPrefs>;
+  theme?: Theme;
 }
 
 export interface ListParams {
@@ -214,7 +229,7 @@ export interface DataSource {
   bankAccounts: Resource<BankAccount, CreateInput<BankAccount, 'createdAt'>>;
   activity: Pick<Resource<ActivityEvent>, 'list'>;
   support: Pick<Resource<SupportTicket>, 'list' | 'get'> & {
-    create(input: { subject: string; category: string; message: string }): Promise<SupportTicket>;
+    create(input: { subject: string; category: TicketCategory; message: string }): Promise<SupportTicket>;
     reply(id: Id, message: string): Promise<SupportTicket>;
     close(id: Id): Promise<SupportTicket>;
   };
@@ -224,12 +239,14 @@ export interface DataSource {
     update(data: UpdateUserData, userId?: Id): Promise<User>;
     uploadDocuments(files: Partial<Record<DocumentType, File>>, userId?: Id): Promise<User>;
     submitCompliance(userId?: Id): Promise<User>;
+    /** Not available in demo mode (rejects with a 400). */
+    changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>;
   };
   stats: { overview(params?: OverviewParams): Promise<Overview> };
   /** Demo mode: wipe local data and re-seed. Not supported by the api source. */
   reset(): Promise<void>;
   settings: {
     get(): Promise<Settings>;
-    update(input: Partial<Settings>): Promise<Settings>;
+    update(input: SettingsUpdate): Promise<Settings>;
   };
 }

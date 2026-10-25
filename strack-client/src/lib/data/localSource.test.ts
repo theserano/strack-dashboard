@@ -110,14 +110,72 @@ describe('CRUD and activity', () => {
     await ds.bankAccounts.remove(b.id);
     expect((await all(ds.bankAccounts)).filter((a) => a.isDefault)).toHaveLength(1);
   });
-  it('support tickets', async () => {
-    const t = await ds.support.create({ subject: 's', category: 'c', message: 'm' });
-    expect((await ds.support.reply(t.id, 'hi')).replies).toHaveLength(1);
-    expect((await ds.support.close(t.id)).status).toBe('closed');
+  const lastEvent = async () => (await ds.activity.list({ limit: 1 })).items[0];
+  const ticket = { subject: 'Missing payout', category: 'payouts' as const, message: 'My payout has not arrived yet.' };
+
+  it('support: create validates, auto-replies and logs activity', async () => {
+    await rejects(ds.support.create({ ...ticket, subject: 'ab' }), 'Subject');
+    await rejects(ds.support.create({ ...ticket, message: 'short' }), 'Message');
+    await rejects(ds.support.create({ ...ticket, category: 'nope' as never }), 'category');
+    const t = await ds.support.create(ticket);
+    expect(t.status).toBe('open');
+    expect(t.replies).toHaveLength(1);
+    expect(t.replies[0]).toMatchObject({ from: 'support' });
+    expect(t.replies[0].message).toContain("we've received your ticket");
+    expect(await lastEvent()).toMatchObject({ action: 'create', entity: 'support_ticket', entityId: t.id });
   });
-  it('settings update persists', async () => {
-    await ds.settings.update({ theme: 'dark' });
+  it('support: reply appends, logs, and is rejected with 409 once closed', async () => {
+    const t = await ds.support.create(ticket);
+    const r = await ds.support.reply(t.id, '  Any update?  ');
+    expect(r.replies).toHaveLength(2);
+    expect(r.replies[1]).toMatchObject({ from: 'user', message: 'Any update?' });
+    expect(await lastEvent()).toMatchObject({ action: 'update', entity: 'support_ticket' });
+    await rejects(ds.support.reply(t.id, '   '), 'Reply');
+    expect((await ds.support.close(t.id)).status).toBe('closed');
+    expect(await lastEvent()).toMatchObject({ description: 'Closed ticket "Missing payout"' });
+    const err = await ds.support.reply(t.id, 'hello?').catch((e) => e);
+    expect(err.response.status).toBe(409);
+    expect((await ds.support.get(t.id)).replies).toHaveLength(2);
+  });
+  it('support: closing twice is idempotent and logs once', async () => {
+    const t = await ds.support.create(ticket);
+    await ds.support.close(t.id);
+    const n = (await ds.activity.list({ limit: 1 })).total;
+    expect((await ds.support.close(t.id)).status).toBe('closed');
+    expect((await ds.activity.list({ limit: 1 })).total).toBe(n);
+  });
+  it('support: list filters by status and subject search', async () => {
+    const a = await ds.support.create(ticket);
+    await ds.support.create({ ...ticket, subject: 'Card question' });
+    await ds.support.close(a.id);
+    expect((await ds.support.list({ status: 'closed' })).items.map((x) => x.id)).toEqual([a.id, 'tkt_001']);
+    expect((await ds.support.list({ status: 'open' })).items.map((x) => x.id)).not.toContain(a.id);
+    expect((await ds.support.list({ search: 'card question' })).total).toBe(1);
+    // search matches the subject only, not the message body
+    expect((await ds.support.list({ search: 'payout has not' })).total).toBe(0);
+  });
+  it('settings: defaults, partial update keeps other toggles, validation, activity', async () => {
+    expect(await ds.settings.get()).toEqual({
+      notifications: { emailOnPayment: true, emailOnPayout: true, weeklySummary: false },
+      currency: 'NGN',
+      theme: 'light',
+    });
+    const next = await ds.settings.update({ notifications: { weeklySummary: true }, theme: 'dark' });
+    expect(next.notifications).toEqual({ emailOnPayment: true, emailOnPayout: true, weeklySummary: true });
     expect((await ds.settings.get()).theme).toBe('dark');
+    expect(await lastEvent()).toMatchObject({ entity: 'settings', description: 'Updated settings' });
+    await rejects(ds.settings.update({ theme: 'neon' as never }), 'Theme');
+    await rejects(ds.settings.update({ currency: 'USD' } as never), 'Unknown setting');
+    await rejects(ds.settings.update({ notifications: { bogus: true } as never }), 'Unknown notification');
+    await rejects(ds.settings.update({ notifications: { weeklySummary: 'yes' as never } }), 'true or false');
+    expect((await ds.settings.get()).theme).toBe('dark');
+  });
+  it('demo password change is rejected with a friendly 400 and writes no activity', async () => {
+    const before = (await ds.activity.list({ limit: 1 })).total;
+    const err = await ds.user.changePassword({ currentPassword: 'x', newPassword: 'longenough1' }).catch((e) => e);
+    expect(getErrorMessage(err)).toBe("Password change isn't available in demo mode");
+    expect(err.response.status).toBe(400);
+    expect((await ds.activity.list({ limit: 1 })).total).toBe(before);
   });
 });
 
