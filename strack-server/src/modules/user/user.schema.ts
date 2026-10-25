@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import { Schema, model, Document, Types } from "mongoose";
 
 export interface BaseUser extends Document {
   firstName: string;
@@ -7,7 +7,43 @@ export interface BaseUser extends Document {
   phone: string;
   password: string;
   accountType: "individual" | "business";
+  dob?: Date;
+  bvn?: string;
+  businessName?: string;
+  businessEmail?: string;
+  rcNumber?: string;
+  businessType?: string;
+  industry?: string;
+  businessAddress?: string;
+  documents?: Partial<Record<DocumentType, StoredDocument>>;
+  complianceStatus: ComplianceStatus;
+  verified: boolean;
 }
+
+export const DOCUMENT_TYPES = ["cac", "memorandum", "utility", "validId"] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+export const COMPLIANCE_STATUSES = ["not_started", "in_progress", "pending_review", "approved", "rejected"] as const;
+export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
+
+export interface StoredDocument {
+  fileId: Types.ObjectId; // GridFS file in the "documents" bucket
+  filename: string;
+  mimeType: string;
+  size: number;
+  uploadedAt: Date;
+}
+
+const storedDocumentSchema = new Schema<StoredDocument>(
+  {
+    fileId: { type: Schema.Types.ObjectId, required: true },
+    filename: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true },
+    uploadedAt: { type: Date, required: true },
+  },
+  { _id: false }
+);
 
 const baseUserSchema = new Schema<BaseUser>(
   {
@@ -22,6 +58,30 @@ const baseUserSchema = new Schema<BaseUser>(
       enum: ["individual", "business"],
       required: true,
     },
+
+    // Compliance (KYC) details
+    dob: { type: Date },
+    bvn: { type: String },
+    // Business details step (every account type fills these in)
+    businessName: { type: String },
+    businessEmail: { type: String, lowercase: true },
+    rcNumber: { type: String },
+    businessType: { type: String },
+    industry: { type: String },
+    businessAddress: { type: String },
+    documents: {
+      type: new Schema(
+        Object.fromEntries(DOCUMENT_TYPES.map((t) => [t, { type: storedDocumentSchema }])),
+        { _id: false }
+      ),
+      default: {},
+    },
+    complianceStatus: {
+      type: String,
+      enum: COMPLIANCE_STATUSES,
+      default: "not_started",
+    },
+    verified: { type: Boolean, default: false },
   },
   {
     timestamps: true,

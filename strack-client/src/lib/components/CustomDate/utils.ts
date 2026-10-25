@@ -48,3 +48,9 @@ export const yearsAgo = (years: number) => {
   const today = startOfDay(new Date());
   return new Date(today.getFullYear() - years, today.getMonth(), today.getDate());
 };
+
+/** ISO date or datetime from the API (e.g. 1990-03-12T00:00:00.000Z) -> DD/MM/YYYY. */
+export const fromISODate = (iso?: string | null): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+};

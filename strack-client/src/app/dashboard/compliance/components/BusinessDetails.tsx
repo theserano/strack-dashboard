@@ -4,21 +4,65 @@ import CustomHeading from '@/lib/components/CustomHeading';
 import CustomText from '@/lib/components/CustomText';
 import CustomInput from '@/lib/components/CustomInput';
 import CustomButton from '@/lib/components/CustomButton';
-import { useAppSelector } from '@/lib/hook';
-import { useState } from 'react';
+import CustomSelect from '@/lib/components/CustomSelect';
+import { showToast } from '@/lib/utils/plainFunctions';
+import { useEffect, useState } from 'react';
+import { useSaveStep } from '../useSaveStep';
+import { BUSINESS_TYPES, INDUSTRIES, OTHER, splitChoice } from '../options';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const BusinessDetails = () => {
-  const { user } = useAppSelector((state) => state.user);
-  const [businessName, setBusinessName] = useState(
-    (user as { businessName?: string })?.businessName || ''
-  );
-  const [businessEmail, setBusinessEmail] = useState(
-    (user as { businessEmail?: string })?.businessEmail || ''
-  );
-  const [businessAddress, setBusinessAddress] = useState('');
-  const [rcNumber, setRcNumber] = useState('');
-  const [businessType, setBusinessType] = useState('');
-  const [industry, setIndustry] = useState('');
+  const { user, save, saving, locked } = useSaveStep();
+  const [businessName, setBusinessName] = useState(user?.businessName || '');
+  const [businessEmail, setBusinessEmail] = useState(user?.businessEmail || '');
+  const [businessAddress, setBusinessAddress] = useState(user?.businessAddress || '');
+  const [rcNumber, setRcNumber] = useState(user?.rcNumber || '');
+  // Dropdown choice, plus free text when "Other" is picked.
+  const [businessType, setBusinessType] = useState(splitChoice(user?.businessType, BUSINESS_TYPES));
+  const [industry, setIndustry] = useState(splitChoice(user?.industry, INDUSTRIES));
+  const [submitted, setSubmitted] = useState(false);
+
+  // Fill in saved values once the user loads (e.g. after a page reload).
+  useEffect(() => {
+    if (!user) return;
+    setBusinessName((v) => v || user.businessName || '');
+    setBusinessEmail((v) => v || user.businessEmail || '');
+    setBusinessAddress((v) => v || user.businessAddress || '');
+    setRcNumber((v) => v || user.rcNumber || '');
+    setBusinessType((v) => (v.choice ? v : splitChoice(user.businessType, BUSINESS_TYPES)));
+    setIndustry((v) => (v.choice ? v : splitChoice(user.industry, INDUSTRIES)));
+  }, [user]);
+
+  const resolve = (v: { choice: string; other: string }) =>
+    v.choice === OTHER ? v.other.trim() : v.choice;
+  const businessTypeValue = resolve(businessType);
+  const industryValue = resolve(industry);
+
+  const errors = {
+    businessName: !businessName.trim(),
+    businessEmail: !EMAIL_REGEX.test(businessEmail.trim()),
+    rcNumber: !rcNumber.trim(),
+    businessType: !businessTypeValue,
+    industry: !industryValue,
+    businessAddress: !businessAddress.trim(),
+  };
+
+  const handleSave = () => {
+    setSubmitted(true);
+    if (Object.values(errors).some(Boolean)) {
+      showToast({ message: 'Error', description: 'Please fill in all fields correctly.' });
+      return;
+    }
+    save({
+      businessName: businessName.trim(),
+      businessEmail: businessEmail.trim(),
+      rcNumber: rcNumber.trim(),
+      businessType: businessTypeValue,
+      industry: industryValue,
+      businessAddress: businessAddress.trim(),
+    });
+  };
 
   return (
     <section className="max-w-[600px] flex flex-col mt-8 gap-8">
@@ -39,6 +83,7 @@ const BusinessDetails = () => {
           onChange={setBusinessName}
           placeholder="Enter your business name"
           required
+          error={submitted && errors.businessName}
         />
         <CustomInput
           id="bd-businessEmail"
@@ -48,6 +93,7 @@ const BusinessDetails = () => {
           placeholder="business@company.com"
           type="email"
           required
+          error={submitted && errors.businessEmail}
         />
         <CustomInput
           id="bd-rcNumber"
@@ -56,24 +102,51 @@ const BusinessDetails = () => {
           onChange={setRcNumber}
           placeholder="Enter RC number"
           required
+          error={submitted && errors.rcNumber}
         />
         <div className="flex flex-col sm:flex-row gap-4">
-          <CustomInput
-            id="bd-businessType"
-            label="Business type"
-            value={businessType}
-            onChange={setBusinessType}
-            placeholder="e.g. Limited Liability"
-            required
-          />
-          <CustomInput
-            id="bd-industry"
-            label="Industry"
-            value={industry}
-            onChange={setIndustry}
-            placeholder="e.g. Technology"
-            required
-          />
+          <div className="flex w-full flex-col gap-3">
+            <CustomSelect
+              id="bd-businessType"
+              label="Business type"
+              value={businessType.choice}
+              options={BUSINESS_TYPES}
+              onChange={(choice) => setBusinessType((v) => ({ ...v, choice }))}
+              placeholder="Select business type"
+              required
+              error={submitted && !businessType.choice}
+            />
+            {businessType.choice === OTHER && (
+              <CustomInput
+                id="bd-businessType-other"
+                value={businessType.other}
+                onChange={(other) => setBusinessType((v) => ({ ...v, other }))}
+                placeholder="Enter your business type"
+                error={submitted && errors.businessType}
+              />
+            )}
+          </div>
+          <div className="flex w-full flex-col gap-3">
+            <CustomSelect
+              id="bd-industry"
+              label="Industry"
+              value={industry.choice}
+              options={INDUSTRIES}
+              onChange={(choice) => setIndustry((v) => ({ ...v, choice }))}
+              placeholder="Select industry"
+              required
+              error={submitted && !industry.choice}
+            />
+            {industry.choice === OTHER && (
+              <CustomInput
+                id="bd-industry-other"
+                value={industry.other}
+                onChange={(other) => setIndustry((v) => ({ ...v, other }))}
+                placeholder="Enter your industry"
+                error={submitted && errors.industry}
+              />
+            )}
+          </div>
         </div>
         <CustomInput
           id="bd-address"
@@ -82,10 +155,16 @@ const BusinessDetails = () => {
           onChange={setBusinessAddress}
           placeholder="Enter your business address"
           required
+          error={submitted && errors.businessAddress}
         />
       </div>
 
-      <CustomButton text="Save & Continue" />
+      <CustomButton
+        text={locked ? 'Submitted for review' : 'Save & Continue'}
+        onClick={handleSave}
+        isLoading={saving}
+        disabled={saving || locked}
+      />
     </section>
   );
 };

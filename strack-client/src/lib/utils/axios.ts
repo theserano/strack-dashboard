@@ -18,95 +18,81 @@ const api = axios.create({
 });
 
 /* ------------------------------------------
+   TOKEN REFRESH
+   The access token only lives in memory, so it's gone after a page reload.
+   The refresh token cookie gets a new one. Concurrent callers share one request.
+------------------------------------------- */
+
+let refreshPromise: Promise<string> | null = null;
+
+export const refreshAccessToken = () => {
+  if (!refreshPromise) {
+    // Plain axios (not `api`) so this call never goes through the interceptors below.
+    refreshPromise = axios
+      .post(`${env.API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
+      .then((res) => {
+        const token = (res.data.data as { accessToken: string }).accessToken;
+        tokenManager.set(token);
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+};
+
+// Login, signup, refresh and logout don't need an access token.
+const isAuthRequest = (url?: string) => !!url && url.startsWith('/auth/');
+
+/* ------------------------------------------
    REQUEST INTERCEPTOR
 ------------------------------------------- */
 
-api.interceptors.request.use(
-  (config) => {
-    const token = tokenManager.get();
+api.interceptors.request.use(async (config) => {
+  let token = tokenManager.get();
 
-    if (token) {
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${token}`;
+  // After a reload: get a token first instead of sending the request without one.
+  if (!token && !isAuthRequest(config.url)) {
+    try {
+      token = await refreshAccessToken();
+    } catch {
+      // Not logged in; let the request go out and fail with 401.
     }
+  }
 
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-/* ------------------------------------------
-   REFRESH STATE (prevents race conditions)
-------------------------------------------- */
-
-let isRefreshing = false;
-
-type FailedRequest = {
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-};
-
-let failedQueue: FailedRequest[] = [];
-
-const processQueue = (error: unknown, token?: string) => {
-  failedQueue.forEach((promise) => {
-    if (error) {
-      promise.reject(error);
-    } else {
-      promise.resolve(token!);
-    }
-  });
-
-  failedQueue = [];
-};
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 /* ------------------------------------------
    RESPONSE INTERCEPTOR
+   Access token expired mid-session: refresh once and retry.
 ------------------------------------------- */
 
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as RetryableRequestConfig;
+    const originalRequest = error.config as RetryableRequestConfig | undefined;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({
-            resolve: (token: string) => {
-              originalRequest.headers = originalRequest.headers ?? {};
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-              resolve(api(originalRequest));
-            },
-            reject,
-          });
-        });
-      }
-
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isAuthRequest(originalRequest.url)
+    ) {
       originalRequest._retry = true;
-      isRefreshing = true;
-
       try {
-        const response = await api.post('/auth/refresh');
-        const newAccessToken = (response.data.data as { accessToken: string }).accessToken;
-
-        tokenManager.set(newAccessToken);
-        processQueue(null, newAccessToken);
-
-        originalRequest.headers = originalRequest.headers ?? {};
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-
+        const token = await refreshAccessToken();
+        originalRequest.headers = { ...originalRequest.headers, Authorization: `Bearer ${token}` };
         return api(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError);
         tokenManager.clear();
-
         // Optional: hard redirect on auth failure
         // window.location.href = '/login';
-
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
 

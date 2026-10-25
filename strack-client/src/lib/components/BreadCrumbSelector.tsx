@@ -1,5 +1,5 @@
 'use client';
-import React, { JSX, useEffect, useState } from 'react';
+import React, { JSX, createContext, useContext, useState } from 'react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -7,26 +7,35 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from '../../../@/components/ui/breadcrumb';
-import { ChevronRight } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 
 export interface BreadcrumbData {
   id: number;
   label: string;
   details: JSX.Element;
+  /** Shows a green check instead of the step number. */
+  completed?: boolean;
 }
 
 interface BreadcrumbProps {
   breadcrumbs: BreadcrumbData[];
 }
 
-const BreadCrumbSelector = ({ breadcrumbs }: BreadcrumbProps) => {
-  const [selectedBreadcrumb, setSelectedBreadcrumb] = useState<JSX.Element | null>(
-    breadcrumbs[0].details || null
-  );
+const StepContext = createContext<{ next: () => void; goTo: (index: number) => void }>({
+  next: () => {},
+  goTo: () => {},
+});
 
-  const handleBreadcrumbClick = (breadcrumb: BreadcrumbData) => {
-    setSelectedBreadcrumb(breadcrumb.details);
-  };
+/** Lets a step's content move the selector, e.g. to the next step after saving. */
+export const useBreadcrumbStep = () => useContext(StepContext);
+
+const BreadCrumbSelector = ({ breadcrumbs }: BreadcrumbProps) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const current = Math.min(selectedIndex, breadcrumbs.length - 1);
+
+  const goTo = (index: number) =>
+    setSelectedIndex(Math.max(0, Math.min(index, breadcrumbs.length - 1)));
+  const next = () => goTo(current + 1);
 
   return (
     <div>
@@ -37,24 +46,26 @@ const BreadCrumbSelector = ({ breadcrumbs }: BreadcrumbProps) => {
               <BreadcrumbLink asChild key={breadcrumb.id}>
                 <BreadcrumbItem
                   key={breadcrumb.id}
-                  onClick={() => handleBreadcrumbClick(breadcrumb)}
+                  onClick={() => goTo(index)}
                   className={`cursor-pointer hover:text-[#0E121B] `}
                 >
                   <div
-                    className={`${breadcrumb.details === selectedBreadcrumb ? 'text-[#0E121B]' : ''} flex items-center`}
+                    className={`${index === current ? 'text-[#0E121B]' : ''} flex items-center`}
                   >
                     <span
                       className={`flex items-center justify-center w-5 h-5 rounded-full border ${
-                        breadcrumb.details === selectedBreadcrumb
-                          ? 'bg-[#0E121B] text-white'
-                          : 'bg-white text-[#525866]'
+                        breadcrumb.completed
+                          ? 'bg-[#036B26] border-[#036B26] text-white'
+                          : index === current
+                            ? 'bg-[#0E121B] text-white'
+                            : 'bg-white text-[#525866]'
                       }`}
                     >
-                      {index + 1}
+                      {breadcrumb.completed ? <Check size={12} strokeWidth={3} /> : index + 1}
                     </span>
                     <span
                       className={`ml-2 ${
-                        breadcrumb.details === selectedBreadcrumb ? 'text-[#0E121B]' : ''
+                        index === current ? 'text-[#0E121B]' : ''
                       }`}
                     >
                       {breadcrumb.label}
@@ -72,7 +83,9 @@ const BreadCrumbSelector = ({ breadcrumbs }: BreadcrumbProps) => {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {selectedBreadcrumb && <div>{selectedBreadcrumb}</div>}
+      <StepContext.Provider value={{ next, goTo }}>
+        <div key={breadcrumbs[current]?.id}>{breadcrumbs[current]?.details}</div>
+      </StepContext.Provider>
     </div>
   );
 };

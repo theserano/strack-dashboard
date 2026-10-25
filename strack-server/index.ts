@@ -22,6 +22,14 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+// Malformed JSON bodies: reply with a JSON 400 instead of Express's HTML stack trace.
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if ((err as { type?: string })?.type === 'entity.parse.failed') {
+    return res.status(400).json({ message: 'Request body must be valid JSON' });
+  }
+  next(err);
+});
+
 // health check
 app.get('/health', (_req, res) => res.status(200).send('ok'));
 

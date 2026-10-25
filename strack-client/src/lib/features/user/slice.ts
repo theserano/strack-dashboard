@@ -1,14 +1,16 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { getUser, User } from './thunkActions';
+import { getUser, submitCompliance, updateUser, uploadDocuments, User } from './thunkActions';
 
 export interface UserState {
   user: User | null;
   loading: boolean;
+  saving: boolean;
 }
 
 export const initialUserState: UserState = {
   user: null,
   loading: false,
+  saving: false,
 };
 
 export const userSlice = createSlice({
@@ -34,6 +36,21 @@ export const userSlice = createSlice({
       .addCase(getUser.rejected, (state) => {
         state.loading = false;
       });
+
+    // Every compliance save returns the updated user.
+    for (const thunk of [updateUser, uploadDocuments, submitCompliance]) {
+      builder
+        .addCase(thunk.pending, (state) => {
+          state.saving = true;
+        })
+        .addCase(thunk.fulfilled, (state, action) => {
+          state.saving = false;
+          state.user = action.payload;
+        })
+        .addCase(thunk.rejected, (state) => {
+          state.saving = false;
+        });
+    }
   },
 });
 

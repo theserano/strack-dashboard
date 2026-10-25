@@ -3,8 +3,11 @@
 import CustomHeading from '@/lib/components/CustomHeading';
 import CustomText from '@/lib/components/CustomText';
 import CustomButton from '@/lib/components/CustomButton';
-import { useAppSelector } from '@/lib/hook';
-import { CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/lib/hook';
+import { submitCompliance } from '@/lib/features/user/thunkActions';
+import { showToast } from '@/lib/utils/plainFunctions';
+import { CheckCircle2, Circle, AlertCircle, BadgeCheck } from 'lucide-react';
+import { useState } from 'react';
 
 interface VerificationStep {
   label: string;
@@ -12,25 +15,50 @@ interface VerificationStep {
 }
 
 const Summary = () => {
-  const { user } = useAppSelector((state) => state.user);
+  const dispatch = useAppDispatch();
+  const { user, saving } = useAppSelector((state) => state.user);
+  const progress = user?.complianceProgress;
+  const underReview = user?.complianceStatus === 'pending_review';
+  const approved = user?.complianceStatus === 'approved' || !!user?.verified;
+  const [verifying, setVerifying] = useState(false);
+
+  const toStatus = (done?: boolean | null): VerificationStep['status'] =>
+    approved ? 'complete' : !done ? 'incomplete' : underReview ? 'pending' : 'complete';
 
   const steps: VerificationStep[] = [
-    {
-      label: 'Personal Information',
-      status: user ? 'complete' : 'incomplete',
-    },
-    {
-      label: 'Business Details',
-      status: 'incomplete',
-    },
-    {
-      label: 'Business Documents',
-      status: 'incomplete',
-    },
+    { label: 'Personal Information', status: toStatus(progress?.personalInformation) },
+    { label: 'Business Details', status: toStatus(progress?.businessDetails) },
+    { label: 'Business Documents', status: toStatus(progress?.businessDocuments) },
   ];
 
-  const completedCount = steps.filter((s) => s.status === 'complete').length;
+  const completedCount = steps.filter((s) => s.status !== 'incomplete').length;
   const allComplete = completedCount === steps.length;
+
+  const handleSubmit = async () => {
+    if (!user?._id) return;
+    setVerifying(true);
+    // Always show the verifying state for at least 5 seconds.
+    const [result] = await Promise.all([
+      dispatch(submitCompliance({ userId: user._id })),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+    setVerifying(false);
+    if (submitCompliance.fulfilled.match(result)) {
+      showToast({ message: 'Verified', description: 'Your account has been verified.' });
+    } else {
+      showToast({ message: 'Error', description: String(result.payload ?? 'Could not submit.') });
+    }
+  };
+
+  const buttonText = verifying
+    ? 'Verifying...'
+    : approved
+      ? 'Verified'
+      : underReview
+        ? 'Under Review'
+        : allComplete
+          ? 'Submit for Verification'
+          : 'Complete All Steps to Submit';
 
   const statusIcons = {
     complete: <CheckCircle2 className="w-5 h-5 text-[#036B26]" />,
@@ -40,7 +68,7 @@ const Summary = () => {
 
   const statusText = {
     complete: 'Completed',
-    incomplete: 'Not started',
+    incomplete: 'Not completed',
     pending: 'Under review',
   };
 
@@ -111,10 +139,19 @@ const Summary = () => {
         </div>
       )}
 
-      <CustomButton
-        text={allComplete ? 'Submit for Verification' : 'Complete All Steps to Submit'}
-        disabled={!allComplete}
-      />
+      {approved ? (
+        <div className="flex items-center justify-center gap-2 h-12 rounded-lg border border-[#036B26]/20 bg-[#036B26]/5 text-[#036B26] font-medium">
+          <BadgeCheck className="w-5 h-5" />
+          Verified
+        </div>
+      ) : (
+        <CustomButton
+          text={buttonText}
+          onClick={handleSubmit}
+          isLoading={verifying || saving}
+          disabled={!allComplete || underReview || verifying || saving}
+        />
+      )}
     </section>
   );
 };
