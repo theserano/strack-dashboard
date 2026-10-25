@@ -10,6 +10,8 @@ type Props = {
   className?: string;
   type?: 'submit' | 'button' | 'reset' | undefined;
   isLoading?: boolean;
+  /** Stretch to the container width (auth and compliance forms). Defaults to fitting the text. */
+  fullWidth?: boolean;
 };
 
 const CustomButton = ({
@@ -20,12 +22,13 @@ const CustomButton = ({
   className,
   type = 'button',
   isLoading,
+  fullWidth = false,
 }: Props) => {
   return (
     <Button
       onClick={onClick}
       disabled={disabled}
-      className={`w-full h-12 ${disabled ? 'bg-[#E1E4EA] text-[#667185]' : 'bg-[#020C14] text-[#fff]'} text-[16px] rounded-lg disabled:cursor-not-allowed ${className}`}
+      className={`${fullWidth ? "w-full" : "w-auto shrink-0 whitespace-nowrap px-5"} h-12 ${disabled ? 'bg-[#E1E4EA] text-[#667185]' : 'bg-[#020C14] text-[#fff]'} text-[16px] rounded-lg disabled:cursor-not-allowed ${className}`}
       type={type}
     >
       {isLoading ? <Loader2 className="animate-spin" /> : icon ? icon : null}

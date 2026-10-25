@@ -159,7 +159,7 @@ const BusinessDetails = () => {
         />
       </div>
 
-      <CustomButton
+      <CustomButton fullWidth
         text={locked ? 'Submitted for review' : 'Save & Continue'}
         onClick={handleSave}
         isLoading={saving}

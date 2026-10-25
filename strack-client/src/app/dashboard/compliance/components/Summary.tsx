@@ -145,7 +145,7 @@ const Summary = () => {
           Verified
         </div>
       ) : (
-        <CustomButton
+        <CustomButton fullWidth
           text={buttonText}
           onClick={handleSubmit}
           isLoading={verifying || saving}

@@ -147,7 +147,7 @@ const Login = () => {
               <p className="text-[#4D525F]">Keep me logged in</p>
             </Label>
           </div> */}
-          <CustomButton
+          <CustomButton fullWidth
             text="Login"
             className="mb-2 mt-6"
             type="submit"

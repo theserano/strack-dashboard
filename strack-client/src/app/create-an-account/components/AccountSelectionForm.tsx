@@ -43,7 +43,7 @@ const AccountSelectionForm = ({
           />
         ))}
       </div>
-      <CustomButton
+      <CustomButton fullWidth
         text="Continue"
         disabled={!activeCard || activeCard === null}
         onClick={() => {

@@ -243,7 +243,7 @@ const CreateBusinessAccountForm = ({ setStep }: Props) => {
             <p className="text-[#4D525F]">I agree to the</p> Terms & Conditions and Privacy Policy
           </Label>
         </div>
-        <CustomButton text="Create an account" className="mb-2" type="submit" />
+        <CustomButton fullWidth text="Create an account" className="mb-2" type="submit" />
       </form>
     </div>
   );
