@@ -1,22 +1,32 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
+import { UserModel } from '../modules/user/user.schema';
 
 export const authMiddleware = (handler: (req: Request, res: Response, next: NextFunction) => void) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ message: 'Unauthorized' });
 
     const token = authHeader.split(' ')[1];
+    let payload: { userId: string; accountType: 'individual' | 'business'; tokenVersion?: number };
     try {
-      const payload = verifyAccessToken(token) as {
-        userId: string;
-        accountType: 'individual' | 'business';
-      };
-
-      req.user = payload;
-      handler(req, res, next);
+      payload = verifyAccessToken(token) as typeof payload;
     } catch (err) {
       return res.status(401).json({ message: 'Invalid token' });
     }
+
+    try {
+      // Cheap lookup: only the version. A password change bumps it and so signs out every other session.
+      const user = await UserModel.findById(payload.userId).select('tokenVersion').lean();
+      if (!user || (user.tokenVersion ?? 0) !== (payload.tokenVersion ?? 0)) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+
+    req.user = payload;
+    handler(req, res, next);
   };
 };

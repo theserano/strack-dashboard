@@ -104,6 +104,9 @@ export interface NotificationPrefs {
   emailOnPayout: boolean;
   weeklySummary: boolean;
 }
+/** A ticket in a list: the thread is left out (fetch the ticket for it). */
+export type SupportTicketSummary = Omit<SupportTicket, 'replies'> & { replyCount: number };
+
 export interface Settings {
   notifications: NotificationPrefs;
   /** Fixed to NGN. */
@@ -228,7 +231,8 @@ export interface DataSource {
   };
   bankAccounts: Resource<BankAccount, CreateInput<BankAccount, 'createdAt'>>;
   activity: Pick<Resource<ActivityEvent>, 'list'>;
-  support: Pick<Resource<SupportTicket>, 'list' | 'get'> & {
+  support: Pick<Resource<SupportTicket>, 'get'> & {
+    list(params?: ListParams): Promise<ListResult<SupportTicketSummary>>;
     create(input: { subject: string; category: TicketCategory; message: string }): Promise<SupportTicket>;
     reply(id: Id, message: string): Promise<SupportTicket>;
     close(id: Id): Promise<SupportTicket>;

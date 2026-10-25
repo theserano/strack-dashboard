@@ -10,6 +10,9 @@ import { logActivity } from '../activity/activity.service';
 // Anything that changes which account is the default, or deletes one, runs in withOwnerLock so it
 // cannot interleave with a payout (which reads the account) or another default change.
 
+// Activity entries are readable by anyone with the dashboard open: show only the last 4 digits.
+const last4 = (n: string) => `•••• ${n.slice(-4)}`;
+
 const ownerId = (userId: string) => {
   if (!Types.ObjectId.isValid(userId)) throw new HttpError(400, 'Invalid userId');
   return new Types.ObjectId(userId);
@@ -68,7 +71,7 @@ export const createBankAccountService = async (userId: string, input: CreateBank
       const isDefault = !!input.isDefault || !(await BankAccountModel.exists({ owner }).session(session));
       if (isDefault) await unsetOtherDefaults(owner, null, session);
       const [b] = await BankAccountModel.create([{ ...input, isDefault, owner }], { session });
-      await logActivity(owner, { action: 'create', entity: 'bank account', entityId: b._id as Types.ObjectId, description: `Created bank account ${b.bankName} ${b.accountNumber}` }, session);
+      await logActivity(owner, { action: 'create', entity: 'bank account', entityId: b._id as Types.ObjectId, description: `Created bank account ${b.bankName} ${last4(b.accountNumber)}` }, session);
       return b;
     });
     return toBankAccountDto(created);
@@ -100,7 +103,7 @@ export const updateBankAccountService = async (userId: string, id: string, input
         b.isDefault = true;
       }
       await b.save({ session });
-      await logActivity(owner, { action: 'update', entity: 'bank account', entityId: _id, description: `Updated bank account ${b.bankName} ${b.accountNumber}` }, session);
+      await logActivity(owner, { action: 'update', entity: 'bank account', entityId: _id, description: `Updated bank account ${b.bankName} ${last4(b.accountNumber)}` }, session);
       return b;
     });
     return toBankAccountDto(updated);
@@ -119,7 +122,7 @@ export const deleteBankAccountService = async (userId: string, id: string) => {
       throw new HttpError(409, 'This bank account has payouts and cannot be deleted');
     }
     await BankAccountModel.deleteOne({ _id, owner }, { session });
-    await logActivity(owner, { action: 'delete', entity: 'bank account', entityId: _id, description: `Deleted bank account ${b.bankName} ${b.accountNumber}` }, session);
+    await logActivity(owner, { action: 'delete', entity: 'bank account', entityId: _id, description: `Deleted bank account ${b.bankName} ${last4(b.accountNumber)}` }, session);
     if (b.isDefault) {
       // Promote the oldest remaining account so the owner still has a default.
       const next = await BankAccountModel.findOne({ owner }).sort({ createdAt: 1, _id: 1 }).session(session);

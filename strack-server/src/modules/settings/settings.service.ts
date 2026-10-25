@@ -31,9 +31,9 @@ export const updateSettingsService = async (userId: string, input: UpdateSetting
   if (input.theme) $set['settings.theme'] = input.theme;
   for (const [k, v] of Object.entries(input.notifications ?? {})) $set[`settings.notifications.${k}`] = v;
 
-  const user = Object.keys($set).length
-    ? await UserModel.findByIdAndUpdate(owner, { $set }, { new: true, runValidators: true }).select('settings').lean()
-    : await UserModel.findById(owner).select('settings').lean();
+  // An update that sets nothing (e.g. {} or {notifications: {}}) is a client bug: reject it and log nothing.
+  if (!Object.keys($set).length) throw new HttpError(400, 'Nothing to update');
+  const user = await UserModel.findByIdAndUpdate(owner, { $set }, { new: true, runValidators: true }).select('settings').lean();
   if (!user) throw new HttpError(404, 'User not found');
   await logActivity(owner, { action: 'update', entity: 'settings', entityId: owner, description: 'Updated settings' });
   return toDto(user.settings);

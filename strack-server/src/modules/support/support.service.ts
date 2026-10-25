@@ -30,19 +30,33 @@ const toDto = (t: ITicket) => ({
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// The list leaves the threads out (they can be long): each row carries replyCount, the detail has the thread.
 export const listTicketsService = async (userId: string, q: ListTicketsQuery) => {
   const owner = ownerId(userId);
   const filter: Record<string, unknown> = { owner };
   if (q.status) filter.status = q.status;
   if (q.search) filter.subject = new RegExp(escapeRegex(q.search), 'i');
   const [rows, total] = await Promise.all([
-    TicketModel.find(filter)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip((q.page - 1) * q.limit)
-      .limit(q.limit),
+    TicketModel.aggregate<ITicket & { replyCount: number }>([
+      { $match: filter },
+      // _id as a tie-breaker keeps pages stable when createdAt values are equal.
+      { $sort: { createdAt: -1, _id: -1 } },
+      { $skip: (q.page - 1) * q.limit },
+      { $limit: q.limit },
+      { $project: { subject: 1, category: 1, message: 1, status: 1, createdAt: 1, replyCount: { $size: '$replies' } } },
+    ]),
     TicketModel.countDocuments(filter),
   ]);
-  return { items: rows.map(toDto), total, page: q.page, limit: q.limit };
+  const items = rows.map((t) => ({
+    id: String(t._id),
+    subject: t.subject,
+    category: t.category,
+    message: t.message,
+    status: t.status,
+    replyCount: t.replyCount,
+    createdAt: t.createdAt.toISOString(),
+  }));
+  return { items, total, page: q.page, limit: q.limit };
 };
 
 const findOwned = async (userId: string, id: string) => {
@@ -69,13 +83,15 @@ export const replyTicketService = async (userId: string, id: string, input: Repl
   const owner = ownerId(userId);
   // The status condition is part of the update, so a reply cannot slip in after a concurrent close.
   const t = await TicketModel.findOneAndUpdate(
-    { _id: idOf(id), owner, status: 'open' },
+    // 'replies.200' exists only once the thread already holds 200 replies: the cap is part of the update.
+    { _id: idOf(id), owner, status: 'open', 'replies.200': { $exists: false } },
     { $push: { replies: { message: input.message, from: 'user', date: new Date() } } },
     { new: true }
   );
   if (!t) {
-    await findOwned(userId, id); // 404 when missing or not theirs
-    throw new HttpError(409, 'This ticket is closed');
+    const existing = await findOwned(userId, id); // 404 when missing or not theirs
+    if (existing.status === 'closed') throw new HttpError(409, 'This ticket is closed');
+    throw new HttpError(409, 'This ticket has too many replies');
   }
   await logActivity(owner, { action: 'update', entity: 'support_ticket', entityId: t._id as Types.ObjectId, description: `Replied to ticket "${t.subject}"` });
   return toDto(t);

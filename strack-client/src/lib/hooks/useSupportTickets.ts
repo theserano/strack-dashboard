@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppSelector } from '@/lib/hook';
 import { getDataSource } from '@/lib/data';
 import { getErrorMessage } from '@/lib/features/user/thunkActions';
-import type { ListParams, ListResult, SupportTicket } from '@/lib/data/types';
+import type { ListParams, ListResult, SupportTicketSummary } from '@/lib/data/types';
 
 /** Loads one page of support tickets for the current data mode; call refetch() after a mutation. */
 export function useSupportTickets(params: ListParams) {
   const mode = useAppSelector((s) => s.auth.mode);
   const hydrated = useAppSelector((s) => s.auth.hydrated);
-  const [data, setData] = useState<ListResult<SupportTicket> | null>(null);
+  const [data, setData] = useState<ListResult<SupportTicketSummary> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);

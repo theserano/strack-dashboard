@@ -18,6 +18,8 @@ export interface BaseUser extends Document {
   documents?: Partial<Record<DocumentType, StoredDocument>>;
   complianceStatus: ComplianceStatus;
   verified: boolean;
+  /** Bumped on password change; tokens carrying an older value are rejected. */
+  tokenVersion?: number;
   settings?: {
     notifications?: { emailOnPayment?: boolean; emailOnPayout?: boolean; weeklySummary?: boolean };
     theme?: 'light' | 'dark' | 'system';
@@ -91,6 +93,7 @@ const baseUserSchema = new Schema<BaseUser>(
       default: "not_started",
     },
     verified: { type: Boolean, default: false },
+    tokenVersion: { type: Number, default: 0 },
     // Currency is fixed to NGN and not stored. Missing on older accounts: the settings service fills defaults.
     settings: {
       type: new Schema(

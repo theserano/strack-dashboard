@@ -1,4 +1,4 @@
-/** Same rule as the server (signup + change password): at least 8 characters, at most 72 bytes. */
+/** Same rule as the server for signup and change password: at least 8 characters and at most 72 bytes (bcrypt ignores the rest). */
 export const MIN_PASSWORD = 8;
 
 export type Strength = { score: 0 | 1 | 2 | 3 | 4; label: string };

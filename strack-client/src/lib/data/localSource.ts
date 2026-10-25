@@ -1,7 +1,8 @@
 import type { DocumentType, StoredDocument, User } from '@/lib/features/user/thunkActions';
 import { DEMO_USER_ID, PAYOUT_FEE, generateSeed, type DemoData } from './seed';
 import { computeOverview } from './overview';
-import { bankFieldErrors, bankLabel, payoutAmountError } from './payoutForm';
+import { bankFieldErrors, maskedBankLabel, payoutAmountError } from './payoutForm';
+import { formatMoney } from '@/lib/utils/money';
 import type {
   ActivityEvent,
   BankAccount,
@@ -101,6 +102,7 @@ const fail = (message: string, status = 400): never => {
 
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const newRef = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9).toUpperCase()}`;
+export const MAX_REPLIES = 200;
 export const AUTO_REPLY = "Thanks, we've received your ticket. Our team will get back to you within 24 hours.";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -259,6 +261,8 @@ const withProgress = (u: User): User => {
     },
   };
 };
+
+const PROFILE_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'businessName', 'businessEmail'];
 
 const assertEditable = (u: User) => {
   if (u.complianceStatus === 'pending_review' || u.complianceStatus === 'approved') {
@@ -488,7 +492,7 @@ const bankAccountsSource: DataSource['bankAccounts'] = {
       createdAt: nowIso(),
     };
     save('bankAccounts', [...all.map((a) => (isDefault ? { ...a, isDefault: false } : a)), item]);
-    logActivity('create', 'bank account', item.id, `Created bank account ${bankLabel(item)}`);
+    logActivity('create', 'bank account', item.id, `Created bank account ${maskedBankLabel(item)}`);
     return item;
   },
   update: async (id, input) => {
@@ -513,7 +517,7 @@ const bankAccountsSource: DataSource['bankAccounts'] = {
     const makeDefault = isDefault === true && !current.isDefault;
     if (makeDefault) next.isDefault = true;
     save('bankAccounts', all.map((a) => (a.id === id ? next : makeDefault ? { ...a, isDefault: false } : a)));
-    logActivity('update', 'bank account', id, `Updated bank account ${bankLabel(next)}`);
+    logActivity('update', 'bank account', id, `Updated bank account ${maskedBankLabel(next)}`);
     return next;
   },
   remove: async (id) => {
@@ -524,7 +528,7 @@ const bankAccountsSource: DataSource['bankAccounts'] = {
     // Deleting the default promotes the first remaining account.
     if (item.isDefault && rest.length) rest[0] = { ...rest[0], isDefault: true };
     save('bankAccounts', rest);
-    logActivity('delete', 'bank account', id, `Deleted bank account ${bankLabel(item)}`);
+    logActivity('delete', 'bank account', id, `Deleted bank account ${maskedBankLabel(item)}`);
   },
 };
 
@@ -630,7 +634,7 @@ export const localSource: DataSource = {
       };
       save('payouts', [...load('payouts'), payout]);
       save('transactions', [...transactions, debit]);
-      logActivity('create', 'payout', payout.id, `Requested a payout of ${amount / 100} NGN`);
+      logActivity('create', 'payout', payout.id, `Requested a payout of ${formatMoney(amount)}`);
       return payout;
     },
   },
@@ -638,7 +642,11 @@ export const localSource: DataSource = {
   // Like the server: search matches the description only.
   activity: { list: async (p) => query<ActivityEvent>(load('activity'), p, ['description']) },
   support: {
-    list: async (p) => query<SupportTicket>(load('support'), p, ['subject']),
+    list: async (p) => {
+      const r = query<SupportTicket>(load('support'), p, ['subject']);
+      // Like the server: rows carry replyCount, the thread comes from get().
+      return { ...r, items: r.items.map(({ replies, ...t }) => ({ ...t, replyCount: replies.length })) };
+    },
     get: async (id) => findOrFail(load('support'), id, 'Ticket'),
     create: async (input) => {
       const subject = input.subject?.trim() ?? '';
@@ -667,6 +675,7 @@ export const localSource: DataSource = {
       const all = load('support');
       const t = findOrFail(all, id, 'Ticket');
       if (t.status === 'closed') fail('This ticket is closed', 409);
+      if (t.replies.length >= MAX_REPLIES) fail('This ticket has too many replies', 409);
       const next = { ...t, replies: [...t.replies, { id: newId('rep'), message, from: 'user' as const, date: nowIso() }] };
       save('support', all.map((x) => (x.id === id ? next : x)));
       logActivity('update', 'support_ticket', id, `Replied to ticket "${t.subject}"`);
@@ -688,9 +697,14 @@ export const localSource: DataSource = {
     update: async (data) => {
       const current = load('user');
       assertEditable(current);
-      const next = withProgress(markInProgress({ ...current, ...data }));
+      // Demo mode has no password: the email-change check is server-only. currentPassword is never stored.
+      const { currentPassword: _ignored, ...fields } = data;
+      const profileOnly = Object.keys(fields).every((k) => PROFILE_FIELDS.includes(k));
+      // Only a compliance step moves the compliance status; a plain profile edit leaves it alone.
+      const merged = { ...current, ...fields };
+      const next = withProgress(profileOnly ? merged : markInProgress(merged));
       save('user', next);
-      logActivity('update', 'user', DEMO_USER_ID, 'Updated compliance details');
+      logActivity('update', 'user', DEMO_USER_ID, profileOnly ? 'Updated profile' : 'Updated compliance details');
       return next;
     },
     uploadDocuments: async (files) => {
@@ -739,6 +753,7 @@ export const localSource: DataSource = {
         if (typeof v !== 'boolean') fail(`${k} must be true or false`);
       }
       if (input.theme !== undefined && !THEMES.includes(input.theme)) fail('Theme must be light, dark or system');
+      if (input.theme === undefined && !Object.keys(input.notifications ?? {}).length) fail('Nothing to update');
       const next: Settings = {
         ...cur,
         notifications: { ...cur.notifications, ...(input.notifications ?? {}) },

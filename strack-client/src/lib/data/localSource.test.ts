@@ -144,6 +144,38 @@ describe('CRUD and activity', () => {
     expect((await ds.support.close(t.id)).status).toBe('closed');
     expect((await ds.activity.list({ limit: 1 })).total).toBe(n);
   });
+  it('support: list rows carry replyCount and no thread; get returns the thread', async () => {
+    const t = await ds.support.create(ticket);
+    const row = (await ds.support.list({ search: 'Missing payout' })).items.find((x) => x.id === t.id)!;
+    expect(row).toMatchObject({ replyCount: 1 });
+    expect('replies' in row).toBe(false);
+    expect((await ds.support.get(t.id)).replies).toHaveLength(1);
+  });
+  it('support: a thread is capped at 200 replies (409)', async () => {
+    const t = await ds.support.create(ticket);
+    const raw = JSON.parse(store.get('strack:demo:support')!);
+    const full = raw.map((x: { id: string; replies: unknown[] }) =>
+      x.id === t.id ? { ...x, replies: Array.from({ length: 200 }, (_, i) => ({ id: `r${i}`, message: 'm', from: 'user', date: x.replies[0] && (x.replies[0] as { date: string }).date })) } : x);
+    store.set('strack:demo:support', JSON.stringify(full));
+    const err = await ds.support.reply(t.id, 'one more').catch((e) => e);
+    expect(err.response.status).toBe(409);
+    expect(getErrorMessage(err)).toBe('This ticket has too many replies');
+    expect((await ds.support.get(t.id)).replies).toHaveLength(200);
+  });
+  it('settings: an empty update is rejected (400) and not logged', async () => {
+    const n = (await ds.activity.list({ limit: 1 })).total;
+    await rejects(ds.settings.update({}), 'Nothing to update');
+    await rejects(ds.settings.update({ notifications: {} }), 'Nothing to update');
+    expect((await ds.activity.list({ limit: 1 })).total).toBe(n);
+  });
+  it('profile: email change works in demo without a password, which is never stored', async () => {
+    const raw = JSON.parse(store.get('strack:demo:user')!);
+    store.set('strack:demo:user', JSON.stringify({ ...raw, complianceStatus: 'not_started', verified: false }));
+    const u = await ds.user.update({ email: 'new@example.com', currentPassword: 'whatever' });
+    expect(u.email).toBe('new@example.com');
+    expect(JSON.stringify(u)).not.toContain('whatever');
+    expect(u.complianceStatus).toBe('not_started'); // a profile edit does not start compliance
+  });
   it('support: list filters by status and subject search', async () => {
     const a = await ds.support.create(ticket);
     await ds.support.create({ ...ticket, subject: 'Card question' });
@@ -723,10 +755,10 @@ describe('activity log (parity with the server)', () => {
     await step(() => ds.transactions.refund(txn.id), 'create', 'transaction', /^Refunded transaction TXN-/);
     await step(() => ds.paymentLinks.remove(l.id), 'delete', 'payment link', /^Deleted payment link Logo2$/);
     const b = await ds.bankAccounts.create({ bankName: 'Zenith Bank', accountNumber: '1111111111', accountName: 'Ada', isDefault: false });
-    expect((await last()).description).toBe('Created bank account Zenith Bank 1111111111');
+    expect((await last()).description).toBe('Created bank account Zenith Bank •••• 1111');
     await step(() => ds.bankAccounts.update(b.id, { isDefault: true }), 'update', 'bank account', /^Updated bank account/);
     await step(() => ds.bankAccounts.remove(b.id), 'delete', 'bank account', /^Deleted bank account/);
-    await step(() => ds.payouts.create({ amount: 500000, bankAccountId: 'bnk_001' }), 'create', 'payout', /^Requested a payout of 5000 NGN$/);
+    await step(() => ds.payouts.create({ amount: 500000, bankAccountId: 'bnk_001' }), 'create', 'payout', /^Requested a payout of ₦5,000\.00$/);
   });
 
   it('logs profile updates and compliance submit, and not the rejected edit', async () => {
@@ -736,6 +768,8 @@ describe('activity log (parity with the server)', () => {
     const raw = JSON.parse(store.get('strack:demo:user')!);
     store.set('strack:demo:user', JSON.stringify({ ...raw, complianceStatus: 'not_started', verified: false }));
     await ds.user.update({ firstName: 'Ada' });
+    expect((await last()).description).toBe('Updated profile');
+    await ds.user.update({ rcNumber: 'RC123' });
     expect((await last()).description).toBe('Updated compliance details');
     await ds.user.submitCompliance().catch(() => undefined);
     expect((await events()).filter((e) => e.entity === 'user').length).toBeGreaterThanOrEqual(1);

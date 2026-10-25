@@ -62,6 +62,9 @@ export const payoutCsvColumns = (bankLabel: (id: string) => string): CsvColumn<P
 
 export const bankLabel = (b?: Pick<BankAccount, 'bankName' | 'accountNumber'>) => (b ? `${b.bankName} ${b.accountNumber}` : 'Deleted account');
 
+/** Bank label with only the last 4 digits, for activity entries (which anyone with the dashboard open can read). */
+export const maskedBankLabel = (b: Pick<BankAccount, 'bankName' | 'accountNumber'>) => `${b.bankName} •••• ${b.accountNumber.slice(-4)}`;
+
 /** Parses a naira text input ("1,500.50") to kobo. Null when it is not a plain amount with at most 2 decimals. */
 export const parseNairaInput = (text: string): number | null => {
   const t = text.replace(/[₦\s,]/g, '');

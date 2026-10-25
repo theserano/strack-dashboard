@@ -6,6 +6,7 @@ declare global {
       user?: {
         userId: string;
         accountType: 'individual' | 'business';
+        tokenVersion?: number;
       };
     }
   }

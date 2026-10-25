@@ -18,6 +18,9 @@ import { logActivity } from '../activity/activity.service';
 // status 'successful') in ONE Mongo transaction under withOwnerLock, so the debit counts against
 // the balance immediately and the same money cannot be paid out twice.
 
+const formatNaira = (kobo: number) =>
+  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', currencyDisplay: 'narrowSymbol' }).format(kobo / 100);
+
 const ownerId = (userId: string) => {
   if (!Types.ObjectId.isValid(userId)) throw new HttpError(400, 'Invalid userId');
   return new Types.ObjectId(userId);
@@ -118,7 +121,7 @@ export const createPayoutService = async (userId: string, input: CreatePayoutInp
           ],
           { session }
         );
-        await logActivity(owner, { action: 'create', entity: 'payout', entityId: p._id as Types.ObjectId, description: `Requested a payout of ${input.amount / 100} NGN` }, session);
+        await logActivity(owner, { action: 'create', entity: 'payout', entityId: p._id as Types.ObjectId, description: `Requested a payout of ${formatNaira(input.amount)}` }, session);
         return { payout: p, created: true };
       });
       return { payout: toPayoutDto(result.payout), created: result.created };

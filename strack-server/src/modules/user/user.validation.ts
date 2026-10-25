@@ -22,6 +22,9 @@ export const updateUserSchema = z
     businessType: text,
     industry: text,
     businessAddress: text,
+
+    // Required (and verified) only when the email address changes; never saved.
+    currentPassword: z.string().min(1),
   })
   .partial()
   .strict();

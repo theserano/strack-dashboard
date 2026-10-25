@@ -67,7 +67,8 @@ export const refreshTokenController = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    // A revoked session (password changed elsewhere) is a 401 so the client logs out cleanly.
+    res.status(error instanceof HttpError ? error.status : 500).json({
       message: error instanceof Error ? error.message : 'Internal Server Error',
     });
   }
@@ -99,8 +100,13 @@ export const changePasswordController = async (req: Request, res: Response) => {
     if (!userId) throw new HttpError(401, 'Unauthorized');
     const r = changePasswordSchema.safeParse(req.body);
     if (!r.success) throw new HttpError(400, r.error.issues[0]?.message ?? 'Invalid request');
-    await changePasswordService(userId, r.data);
-    res.status(200).json({ message: 'Password changed successfully', data: null });
+    const { accessToken, refreshToken } = await changePasswordService(userId, r.data);
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+    res.status(200).json({ message: 'Password changed successfully', data: { accessToken } });
   } catch (error) {
     const { status, message } = toErrorResponse(error);
     if (status >= 500) console.error(error);

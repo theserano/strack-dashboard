@@ -6,7 +6,7 @@ export const signupSchema = z.object({
   lastName: z.string(),
   email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
   phone: z.string(),
-  password: z.string().min(8),
+  password: z.string().min(8).refine((p) => Buffer.byteLength(p) <= 72, 'Password is too long (72 bytes at most)'),
 
   businessName: z.string().optional(),
   businessEmail: z.string().email().optional(),

@@ -63,6 +63,7 @@ export const signupService = async (data: signUpRequest) => {
     const payload = {
       userId: user._id,
       accountType: user.accountType,
+      tokenVersion: user.tokenVersion ?? 0,
     };
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
@@ -90,7 +91,7 @@ export const loginService = async (data: loginRequest) => {
     if (!user || !isPasswordValid) {
       throw new Error('Invalid email or password');
     }
-    const payload = { userId: user._id, accountType: user.accountType };
+    const payload = { userId: user._id, accountType: user.accountType, tokenVersion: user.tokenVersion ?? 0 };
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
@@ -108,12 +109,19 @@ export const refreshTokenService = async (refreshToken: string) => {
   const decoded = verifyRefreshToken(refreshToken) as {
     userId: string;
     accountType: 'individual' | 'business';
-    // jti?: string;
+    tokenVersion?: number;
   };
+
+  // A password change bumps tokenVersion, which ends every session that still carries the old one.
+  const user = await UserModel.findById(decoded.userId).select('tokenVersion').lean();
+  if (!user || (user.tokenVersion ?? 0) !== (decoded.tokenVersion ?? 0)) {
+    throw new HttpError(401, 'Session expired. Please log in again.');
+  }
 
   const payload = {
     userId: decoded.userId,
     accountType: decoded.accountType,
+    tokenVersion: user.tokenVersion ?? 0,
   };
 
   const newAccessToken = signAccessToken(payload);
@@ -145,9 +153,15 @@ export const changePasswordService = async (
     throw new HttpError(400, 'New password must be different from the current password');
   }
 
-  // updateOne skips the full-document save; only the hash changes.
-  await UserModel.updateOne({ _id: owner }, { $set: { password: await hashPassword(newPassword) } });
-  // Refresh tokens are stateless JWTs (nothing is stored server-side, logoutService is a no-op), so other
-  // sessions cannot be revoked here. They keep working until their token expires.
+  // Bumping tokenVersion invalidates every access and refresh token issued before now (other devices
+  // are signed out). The caller gets fresh tokens so this session stays logged in.
+  const updated = await UserModel.findOneAndUpdate(
+    { _id: owner },
+    { $set: { password: await hashPassword(newPassword) }, $inc: { tokenVersion: 1 } },
+    { new: true }
+  ).select('tokenVersion accountType');
+  if (!updated) throw new HttpError(404, 'User not found');
   await logActivity(owner, { action: 'update', entity: 'user', entityId: owner, description: 'Changed password' });
+  const payload = { userId: updated._id, accountType: updated.accountType, tokenVersion: updated.tokenVersion ?? 0 };
+  return { accessToken: signAccessToken(payload), refreshToken: signRefreshToken(payload) };
 };

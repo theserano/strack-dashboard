@@ -12,7 +12,7 @@ import StatusBadge from '@/lib/components/StatusBadge';
 import { useAppSelector } from '@/lib/hook';
 import { useSupportTickets } from '@/lib/hooks/useSupportTickets';
 import { getDataSource } from '@/lib/data';
-import { TICKET_CATEGORIES, type SupportTicket, type TicketCategory } from '@/lib/data/types';
+import { TICKET_CATEGORIES, type SupportTicket, type SupportTicketSummary, type TicketCategory } from '@/lib/data/types';
 import { getErrorMessage } from '@/lib/features/user/thunkActions';
 import { showToast } from '@/lib/utils/plainFunctions';
 import { FileQuestion, Mail, MessageCircle, Phone, Plus, Send } from 'lucide-react';
@@ -145,17 +145,28 @@ function TicketDrawer({ ticket, onClose, onChanged }: { ticket: SupportTicket | 
     setConfirming(false);
   }, [id]);
 
-  const run = async (fn: () => Promise<SupportTicket>, done?: () => void) => {
+  // The ticket the action was started on; if another ticket is open when it finishes, its result is ignored.
+  const idRef = useRef(id);
+  idRef.current = id;
+
+  const run = async (ticketId: string, fn: () => Promise<SupportTicket>, done?: () => void) => {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
     setError(null);
     try {
-      onChanged(await fn());
+      const t = await fn();
+      if (idRef.current !== ticketId) return;
+      onChanged(t);
       done?.();
     } catch (e) {
+      if (idRef.current !== ticketId) return;
       setError(getErrorMessage(e));
       setConfirming(false);
+      // 409: the ticket changed under us (closed, or full). Reload it so the drawer shows the truth.
+      if ((e as { response?: { status?: number } })?.response?.status === 409) {
+        getDataSource(mode).support.get(ticketId).then((t) => idRef.current === ticketId && onChanged(t)).catch(() => {});
+      }
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -166,11 +177,11 @@ function TicketDrawer({ ticket, onClose, onChanged }: { ticket: SupportTicket | 
     if (!ticket) return;
     const m = reply.trim();
     if (!m) return setError('Write a reply first');
-    void run(() => getDataSource(mode).support.reply(ticket.id, m), () => setReply(''));
+    void run(ticket.id, () => getDataSource(mode).support.reply(ticket.id, m), () => setReply(''));
   };
   const close = () => {
     if (!ticket) return;
-    void run(() => getDataSource(mode).support.close(ticket.id), () => {
+    void run(ticket.id, () => getDataSource(mode).support.close(ticket.id), () => {
       setConfirming(false);
       showToast({ message: 'Ticket closed', description: 'You can open a new ticket any time.' });
     });
@@ -240,20 +251,41 @@ export default function SupportPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<SupportTicket | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const mode = useAppSelector((s) => s.auth.mode);
   const { data, error, loading, refetch } = useSupportTickets({ page, limit: LIMIT, status: status || undefined });
 
   useEffect(() => {
-    setSelected(null);
+    setSelectedId(null);
     setPage(1);
   }, [mode]);
 
-  const columns: Column<SupportTicket>[] = [
+  // The list rows carry no thread: load the full ticket whenever one is selected.
+  useEffect(() => {
+    setSelected(null);
+    setDetailError(null);
+    if (!selectedId) return;
+    let current = true;
+    getDataSource(mode)
+      .support.get(selectedId)
+      .then((t) => current && setSelected(t))
+      .catch((e) => {
+        if (!current) return;
+        setSelectedId(null);
+        setDetailError(getErrorMessage(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [selectedId, mode]);
+
+  const columns: Column<SupportTicketSummary>[] = [
     { key: 'subject', header: 'Subject', render: (t) => <span className="font-medium text-[#0E121B]">{t.subject}</span> },
     { key: 'category', header: 'Category', render: (t) => cap(t.category) },
     { key: 'status', header: 'Status', render: (t) => <StatusBadge status={t.status} /> },
-    { key: 'replies', header: 'Replies', render: (t) => t.replies.length },
+    { key: 'replies', header: 'Replies', render: (t) => t.replyCount },
     { key: 'createdAt', header: 'Opened', render: (t) => fmtDateTime(t.createdAt) },
   ];
 
@@ -296,9 +328,9 @@ export default function SupportPage() {
             <CustomButton text="New ticket" icon={<Plus className="w-4 h-4" />} className="!w-auto px-4 !h-10 text-sm" onClick={() => setCreating(true)} />
           </div>
         </div>
-        {error && (
+        {(error || detailError) && (
           <p role="alert" className="mt-3 text-sm text-red-600">
-            {error}
+            {error ?? detailError}
           </p>
         )}
         <div className="mt-4">
@@ -307,7 +339,7 @@ export default function SupportPage() {
             rows={data?.items ?? []}
             rowKey={(t) => t.id}
             loading={loading}
-            onRowClick={setSelected}
+            onRowClick={(t) => setSelectedId(t.id)}
             pagination={{ page, limit: LIMIT, total: data?.total ?? 0, onPageChange: setPage }}
             emptyTitle={status ? 'No tickets match this filter' : 'No tickets yet'}
             emptyDescription={status ? 'Try a different status.' : 'Open a ticket and our team will get back to you.'}
@@ -364,14 +396,14 @@ export default function SupportPage() {
         onClose={() => setCreating(false)}
         onCreated={(t) => {
           setCreating(false);
-          setSelected(t);
+          setSelectedId(t.id);
           setPage(1);
           refetch();
         }}
       />
       <TicketDrawer
         ticket={selected}
-        onClose={() => setSelected(null)}
+        onClose={() => setSelectedId(null)}
         onChanged={(t) => {
           setSelected(t);
           refetch();

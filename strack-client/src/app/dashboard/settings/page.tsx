@@ -3,26 +3,24 @@
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
-import CustomSelect from '@/lib/components/CustomSelect';
 import { useAppDispatch, useAppSelector } from '@/lib/hook';
 import { useResetDemo } from '@/lib/components/DemoBanner';
 import { useSettings } from '@/lib/hooks/useSettings';
 import { getDataSource } from '@/lib/data';
 import { passwordFormError, passwordStrength } from '@/lib/data/passwordForm';
-import type { NotificationPrefs, Theme } from '@/lib/data/types';
+import type { NotificationPrefs } from '@/lib/data/types';
 import { getErrorMessage, updateUser, type UpdateUserData } from '@/lib/features/user/thunkActions';
 import { showToast } from '@/lib/utils/plainFunctions';
-import { Eye, EyeOff, Key, Lock, Palette, Shield, User, Bell } from 'lucide-react';
+import { Eye, EyeOff, Key, Lock, Shield, User, Bell } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-const tabs = ['Profile', 'Security', 'Notifications', 'Appearance', 'API Keys'] as const;
+const tabs = ['Profile', 'Security', 'Notifications', 'API Keys'] as const;
 type Tab = (typeof tabs)[number];
 
 const tabIcons: Record<Tab, React.ElementType> = {
   Profile: User,
   Security: Shield,
   Notifications: Bell,
-  Appearance: Palette,
   'API Keys': Key,
 };
 
@@ -31,17 +29,6 @@ const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; label: string; desc: s
   { key: 'emailOnPayout', label: 'Email on payout', desc: 'Get an email when a payout is made to your bank account' },
   { key: 'weeklySummary', label: 'Weekly summary', desc: 'A weekly email with your revenue and payouts' },
 ];
-
-const THEME_OPTIONS = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'system', label: 'System' },
-];
-
-const applyTheme = (theme: Theme) => {
-  const dark = theme === 'dark' || (theme === 'system' && globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches);
-  document.documentElement.classList.toggle('dark', !!dark);
-};
 
 const Card = ({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) => (
   <section className="border border-[#E1E4EA] rounded-xl bg-white">
@@ -68,14 +55,19 @@ function ProfileSection() {
     businessEmail: user?.businessEmail ?? '',
   };
   const [form, setForm] = useState(initial);
+  const demoMode = useAppSelector((s) => s.auth.mode) === 'demo';
+  const [currentPassword, setCurrentPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const submitting = useRef(false);
+  const emailChanged = form.email.trim().toLowerCase() !== initial.email.toLowerCase();
+  // The server asks for the password when the email changes; demo mode has none.
+  const needsPassword = emailChanged && !demoMode;
   const set = (k: keyof typeof initial) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   // Keep the form in step with the stored profile once it has loaded or been saved.
   useEffect(() => {
     setForm(initial);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const save = async () => {
@@ -85,17 +77,29 @@ function ProfileSection() {
     const keys: (keyof typeof initial)[] = business
       ? ['firstName', 'lastName', 'email', 'phone', 'businessName', 'businessEmail']
       : ['firstName', 'lastName', 'email', 'phone'];
+    const optional = ['businessName', 'businessEmail'];
     for (const k of keys) {
       const v = form[k].trim();
-      if (!v) return setError('Fill in every field');
-      if (v !== initial[k]) data[k] = v;
+      if (v === initial[k]) continue; // only fields being submitted are validated
+      if (!v) {
+        if (optional.includes(k)) continue; // an emptied business field is dropped, not saved
+        return setError('First name, last name, email and phone cannot be empty');
+      }
+      data[k] = v;
     }
     if (!Object.keys(data).length) return setError('Nothing to save');
+    if (needsPassword) {
+      if (!currentPassword) return setError('Enter your current password to change your email');
+      data.currentPassword = currentPassword;
+    }
     setError(null);
     submitting.current = true;
     try {
       const r = await dispatch(updateUser({ userId: user._id, data }));
-      if (updateUser.fulfilled.match(r)) showToast({ message: 'Saved', description: 'Your profile has been updated.' });
+      if (updateUser.fulfilled.match(r)) {
+        setCurrentPassword('');
+        showToast({ message: 'Saved', description: 'Your profile has been updated.' });
+      }
       else setError(String(r.payload ?? 'Could not save your profile.'));
     } finally {
       submitting.current = false;
@@ -133,6 +137,11 @@ function ProfileSection() {
           </>
         )}
       </fieldset>
+      {needsPassword && !locked && (
+        <div className="mt-5 max-w-[300px]">
+          <CustomInput id="settings-currentPassword" label="Current password (needed to change your email)" type="password" value={currentPassword} onChange={setCurrentPassword} placeholder="Current password" />
+        </div>
+      )}
       {error && (
         <p role="alert" className="mt-4 text-sm text-red-600">
           {error}
@@ -194,7 +203,7 @@ function SecuritySection({ demo }: { demo: boolean }) {
     try {
       await getDataSource(mode).user.changePassword({ currentPassword: f.currentPassword, newPassword: f.newPassword });
       setF({ currentPassword: '', newPassword: '', confirm: '' });
-      showToast({ message: 'Password changed', description: 'Use your new password the next time you log in.' });
+      showToast({ message: 'Password changed. Other devices have been signed out.', description: 'Other devices have been signed out.' });
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -268,25 +277,7 @@ function NotificationsSection() {
   );
 }
 
-function AppearanceSection() {
-  const { settings, error, saving, update } = useSettings();
-  useEffect(() => {
-    if (settings) applyTheme(settings.theme);
-  }, [settings]);
-  const change = async (theme: string) => {
-    if (saving) return;
-    const err = await update({ theme: theme as Theme });
-    showToast(err ? { message: 'Error', description: err } : { message: 'Saved', description: 'Theme updated.' });
-  };
-  return (
-    <Card title="Appearance" desc="Choose a theme. Currency is fixed to Nigerian naira (NGN).">
-      {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
-      <div className="max-w-[260px]">
-        <CustomSelect id="settings-theme" label="Theme" value={settings?.theme ?? 'light'} options={THEME_OPTIONS} onChange={change} disabled={!settings || saving} />
-      </div>
-    </Card>
-  );
-}
+// The theme setting stays in the data model, but there is no selector: the app has no dark styles yet.
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Profile');
@@ -338,7 +329,6 @@ export default function SettingsPage() {
           {activeTab === 'Profile' && <ProfileSection />}
           {activeTab === 'Security' && <SecuritySection demo={demo} />}
           {activeTab === 'Notifications' && <NotificationsSection />}
-          {activeTab === 'Appearance' && <AppearanceSection />}
 
           {activeTab === 'API Keys' && (
             <section className="border border-[#E1E4EA] rounded-xl bg-white">

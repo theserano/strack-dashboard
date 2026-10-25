@@ -3,7 +3,11 @@ import { BaseUser, DOCUMENT_TYPES, DocumentType, StoredDocument, UserModel } fro
 import { BUSINESS_FIELDS, UpdateUserInput } from './user.validation';
 import { HttpError } from '../../utils/httpError';
 import { deleteFile, openFile, saveFile } from '../../utils/gridfs';
+import bcrypt from 'bcrypt';
 import { logActivity } from '../activity/activity.service';
+
+// Fields the Settings profile form edits. A save touching only these is a profile edit, not compliance progress.
+const PROFILE_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'businessName', 'businessEmail'];
 
 const PERSONAL_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'dob', 'bvn'] as const;
 
@@ -57,10 +61,18 @@ export const updateUserService = async (userId: string, updates: UpdateUserInput
   const user = await findUserDoc(userId);
   assertEditable(user);
 
-  user.set({ ...updates, ...(updates.dob && { dob: new Date(updates.dob) }) });
-  markInProgress(user);
+  const { currentPassword, ...fields } = updates;
+  if (fields.email && fields.email.toLowerCase() !== user.email) {
+    if (!currentPassword) throw new HttpError(400, 'Enter your current password to change your email');
+    if (!(await bcrypt.compare(currentPassword, user.password))) throw new HttpError(400, 'Current password is incorrect');
+  }
+
+  const profileOnly = Object.keys(fields).every((k) => PROFILE_FIELDS.includes(k));
+  user.set({ ...fields, ...(fields.dob && { dob: new Date(fields.dob) }) });
+  // Compliance progress only moves when a compliance step saves; a plain profile edit leaves the status alone.
+  if (!profileOnly) markInProgress(user);
   await user.save();
-  await logActivity(userId, { action: 'update', entity: 'user', entityId: userId, description: 'Updated compliance details' });
+  await logActivity(userId, { action: 'update', entity: 'user', entityId: userId, description: profileOnly ? 'Updated profile' : 'Updated compliance details' });
   return toSafeUser(user);
 };
 

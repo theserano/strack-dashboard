@@ -1,4 +1,5 @@
 import api from '@/lib/utils/axios';
+import { tokenManager } from '@/lib/utils/auth';
 import { withTimeZone } from './overview';
 import type { DataSource, Id, ListParams, ListResult } from './types';
 
@@ -52,7 +53,9 @@ export const apiSource: DataSource = {
       );
     },
     changePassword: async (input) => {
-      await api.post('/auth/password', input);
+      // The server signs out other devices and returns fresh tokens for this one.
+      const r = await unwrap<{ accessToken: string }>(api.post('/auth/password', input));
+      tokenManager.set(r.accessToken);
     },
     submitCompliance: (userId) => unwrap(api.post('/user/compliance/submit', {}, { params: { userId } })),
   },

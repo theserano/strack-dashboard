@@ -53,7 +53,7 @@ export type UpdateUserData = Partial<
     | 'businessType'
     | 'industry'
     | 'businessAddress'
-  > & { dob: string } // YYYY-MM-DD
+  > & { dob: string; currentPassword: string } // dob: YYYY-MM-DD; currentPassword: required by the server when email changes
 >;
 
 /** Pulls the server's message out of an axios error. */
