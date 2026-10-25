@@ -8,7 +8,7 @@ import EmptyState from '@/lib/components/EmptyState';
 import RevenueChart from '@/lib/components/RevenueChart';
 import { useAppSelector } from '@/lib/hook';
 import { useOverview } from '@/lib/hooks/useOverview';
-import { formatMoney } from '@/lib/utils/money';
+import { formatMoney, formatMoneyOrDash } from '@/lib/utils/money';
 import type { StatsInterval } from '@/lib/data/types';
 import {
   ArrowDownLeft,
@@ -34,11 +34,11 @@ const Skeleton = ({ className }: { className: string }) => (
 export default function DashboardPage() {
   const { user } = useAppSelector((state) => state.user);
   const [days, setDays] = useState(30);
-  const [interval, setInterval] = useState<StatsInterval>('day');
-  const { data, error, loading } = useOverview(days, interval);
+  const [groupBy, setGroupBy] = useState<StatsInterval>('day');
+  const { data, error, loading } = useOverview(days, groupBy);
 
   const hasRevenue = !!data && data.revenueSeries.some((p) => p.amount > 0);
-  const money = (v?: number) => formatMoney(v ?? 0);
+  const money = formatMoneyOrDash;
 
   return (
     <main>
@@ -56,10 +56,10 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         <StatCard label="Total Balance" value={money(data?.balance)} icon={Wallet} loading={loading} hint="Available now" />
         <StatCard label="Revenue" value={money(data?.totalRevenue)} icon={ArrowDownLeft} change={data?.revenueChange} loading={loading} hint="No previous period to compare" />
-        <StatCard label="Payouts & Refunds" value={money(data?.totalPayouts)} icon={ArrowUpRight} loading={loading} hint="Money paid out in this period" />
-        <StatCard label="Transactions" value={String(data?.transactionCount ?? 0)} icon={Receipt} change={data?.countChange} loading={loading} hint="No previous period to compare" />
-        <StatCard label="Success Rate" value={`${data?.successRate ?? 0}%`} icon={CheckCircle2} loading={loading} hint="Successful vs all transactions" />
-        <StatCard label="Total Customers" value={String(data?.customerCount ?? 0)} icon={Users} loading={loading} hint="All time" />
+        <StatCard label="Payouts" value={money(data?.totalPayouts)} icon={ArrowUpRight} loading={loading} hint="Money paid out in this period" />
+        <StatCard label="Transactions" value={data ? String(data.transactionCount) : '—'} icon={Receipt} change={data?.countChange} loading={loading} hint="No previous period to compare" />
+        <StatCard label="Success Rate" value={data ? `${data.successRate}%` : '—'} icon={CheckCircle2} loading={loading} hint="Successful vs all transactions" />
+        <StatCard label="Total Customers" value={data ? String(data.customerCount) : '—'} icon={Users} loading={loading} hint="All time" />
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
@@ -75,10 +75,10 @@ export default function DashboardPage() {
                   <button
                     key={i}
                     type="button"
-                    aria-pressed={interval === i}
-                    onClick={() => setInterval(i)}
+                    aria-pressed={groupBy === i}
+                    onClick={() => setGroupBy(i)}
                     className={`px-3 py-1.5 text-sm capitalize ${
-                      interval === i ? 'bg-[#020C14] text-white' : 'bg-white text-[#525866] hover:bg-[#F7F9FC]'
+                      groupBy === i ? 'bg-[#020C14] text-white' : 'bg-white text-[#525866] hover:bg-[#F7F9FC]'
                     }`}
                   >
                     {i}

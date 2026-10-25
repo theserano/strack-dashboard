@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeOverview } from './overview';
+import { computeOverview, withTimeZone } from './overview';
 import type { Customer, Transaction } from './types';
 
 const now = new Date(2026, 9, 25, 12); // Sun 25 Oct 2026, local
@@ -47,10 +47,10 @@ describe('computeOverview', () => {
   it('groups by Monday week and by month', () => {
     const txns = [tx({ amount: 1, date: at(9, 5) }), tx({ amount: 2, date: at(9, 11) }), tx({ amount: 4, date: at(9, 12) }), tx({ amount: 8, date: at(8, 30) })];
     const w = computeOverview(txns, [], 0, { from: '2026-10-01', to: '2026-10-25', interval: 'week' }, now);
-    expect(w.revenueSeries.map((p) => p.date)).toEqual(['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19']);
+    expect(w.revenueSeries.map((p) => p.date)).toEqual(['2026-10-01', '2026-10-05', '2026-10-12', '2026-10-19']);
     expect(w.revenueSeries.map((p) => p.amount)).toEqual([0, 3, 4, 0]);
     const m = computeOverview(txns, [], 0, { from: '2026-08-10', to: '2026-10-25', interval: 'month' }, now);
-    expect(m.revenueSeries.map((p) => [p.date, p.amount])).toEqual([['2026-08-01', 0], ['2026-09-01', 8], ['2026-10-01', 7]]);
+    expect(m.revenueSeries.map((p) => [p.date, p.amount])).toEqual([['2026-08-10', 0], ['2026-09-01', 8], ['2026-10-01', 7]]);
   });
 
   it('top customers: ordered by total, max 5, only successful credits', () => {
@@ -84,5 +84,39 @@ describe('computeOverview', () => {
     expect(o.customerCount).toBe(1);
     expect(o.revenueSeries).toHaveLength(30);
     expect(computeOverview([], [], 0, {}, now).successRate).toBe(0);
+  });
+
+  it('nets refunded credits out of revenue and top customers; refunds are not payouts', () => {
+    const o = computeOverview(
+      [
+        tx({ id: 'c1', amount: 1000, customerId: 'a' }),
+        tx({ id: 'c2', amount: 400, customerId: 'a' }),
+        tx({ type: 'debit', amount: 1000, refundOf: 'c1' }),
+        tx({ type: 'debit', amount: 250 }),
+        tx({ type: 'debit', amount: 99, refundOf: 'c2', status: 'failed' }), // failed refund: c2 stays revenue
+      ],
+      [cust('a', 'Ada')], 0, P, now
+    );
+    expect(o.totalRevenue).toBe(400);
+    expect(o.totalPayouts).toBe(250);
+    expect(o.topCustomers).toEqual([{ customerId: 'a', name: 'Ada', total: 400, count: 1 }]);
+  });
+
+  it('clamps the first partial week and month bucket to the range start', () => {
+    const w = computeOverview([tx({ date: at(9, 21) })], [], 0, { from: '2026-10-21', to: '2026-10-25', interval: 'week' }, now);
+    expect(w.revenueSeries[0].date).toBe('2026-10-21');
+    expect(w.revenueSeries[0].amount).toBe(1000);
+    const m = computeOverview([], [], 0, { from: '2026-10-10', to: '2026-10-25', interval: 'month' }, now);
+    expect(m.revenueSeries[0].date).toBe('2026-10-10');
+    expect(m.revenueSeries[0].label).toBe(new Date(2026, 9, 10).toLocaleDateString('en-NG', { month: 'short', year: 'numeric' }));
+  });
+});
+
+describe('withTimeZone', () => {
+  it('adds the tz and keeps the other params', () => {
+    expect(withTimeZone({ from: '2026-10-01', interval: 'week' }, 'Africa/Lagos')).toEqual({
+      from: '2026-10-01', interval: 'week', tz: 'Africa/Lagos',
+    });
+    expect(withTimeZone({}).tz).toMatch(/\w/);
   });
 });

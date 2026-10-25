@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, fromKobo, toKobo } from './money';
+import { formatMoney, formatMoneyOrDash, fromKobo, toKobo } from './money';
 
 describe('toKobo', () => {
   it('has no float drift', () => {
@@ -60,5 +60,14 @@ describe('toKobo edge inputs', () => {
   it('rejects a leading-zero thousands group', () => {
     expect(() => toKobo('0,123')).toThrow();
     expect(toKobo('1,234')).toBe(123400);
+  });
+});
+
+describe('formatMoneyOrDash', () => {
+  it('shows a dash instead of zero when there is no value', () => {
+    expect(formatMoneyOrDash(undefined)).toBe('—');
+    expect(formatMoneyOrDash(null)).toBe('—');
+    expect(formatMoneyOrDash(0)).toBe(formatMoney(0));
+    expect(formatMoneyOrDash(123450)).toBe(formatMoney(123450));
   });
 });

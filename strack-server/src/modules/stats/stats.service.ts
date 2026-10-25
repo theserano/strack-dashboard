@@ -5,11 +5,35 @@ import { HttpError } from '../../utils/httpError';
 import type { OverviewQuery } from './stats.validation';
 
 // Response shape mirrors the client Overview type (strack-client/src/lib/data/types.ts).
-// Amounts are integer kobo. Days are UTC days (no timezone parameter yet).
+// Amounts are integer kobo. Days are calendar days in the requested IANA time zone (`tz`, default
+// Africa/Lagos). Revenue/Top customers are net of refunds, payouts exclude refunds (see client Overview doc).
+// Requires MongoDB >= 5.0 ($dateTrunc).
 const DAY = 86400000;
 type Interval = OverviewQuery['interval'];
 
+// Calendar days are carried as UTC-midnight Dates ("cal"); `bound` maps one to the real instant
+// at which that day starts in `tz`.
 const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+
+const tzOffsetMs = (at: Date, tz: string): number => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(at);
+  const v = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  return Date.UTC(v('year'), v('month') - 1, v('day'), v('hour'), v('minute'), v('second')) - Math.floor(at.getTime() / 1000) * 1000;
+};
+
+export const bound = (cal: Date, tz: string): Date => {
+  const first = new Date(cal.getTime() - tzOffsetMs(cal, tz));
+  return new Date(cal.getTime() - tzOffsetMs(first, tz)); // second pass settles DST edges
+};
+
+const todayIn = (tz: string): Date => {
+  const now = new Date();
+  const wall = now.getTime() + tzOffsetMs(now, tz); // local wall clock read as UTC
+  return new Date(wall - (((wall % DAY) + DAY) % DAY));
+};
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
 const bucketStart = (d: Date, interval: Interval): Date => {
@@ -37,18 +61,32 @@ const labelOf = (d: Date, interval: Interval) =>
 const pct = (cur: number, prev: number): number | null =>
   prev === 0 ? null : Math.round(((cur - prev) / prev) * 1000) / 10;
 
-const periodStats = (from: Date, toExcl: Date) => [
+const periodStats = (from: Date, toExcl: Date, refunded: Types.ObjectId[]) => [
   { $match: { createdAt: { $gte: from, $lt: toExcl } } },
   {
     $group: {
       _id: null,
       count: { $sum: 1 },
       ok: { $sum: { $cond: [{ $eq: ['$status', 'successful'] }, 1, 0] } },
+      // Revenue is net of refunds: credits that have a successful refund debit are excluded.
       revenue: {
-        $sum: { $cond: [{ $and: [{ $eq: ['$status', 'successful'] }, { $eq: ['$type', 'credit'] }] }, '$amount', 0] },
+        $sum: {
+          $cond: [
+            { $and: [{ $eq: ['$status', 'successful'] }, { $eq: ['$type', 'credit'] }, { $not: [{ $in: ['$_id', refunded] }] }] },
+            '$amount',
+            0,
+          ],
+        },
       },
+      // Payouts exclude refund debits.
       payouts: {
-        $sum: { $cond: [{ $and: [{ $eq: ['$status', 'successful'] }, { $eq: ['$type', 'debit'] }] }, '$amount', 0] },
+        $sum: {
+          $cond: [
+            { $and: [{ $eq: ['$status', 'successful'] }, { $eq: ['$type', 'debit'] }, { $eq: [{ $ifNull: ['$refundOf', null] }, null] }] },
+            '$amount',
+            0,
+          ],
+        },
       },
     },
   },
@@ -59,33 +97,47 @@ export const getOverviewService = async (userId: string, query: OverviewQuery) =
   const owner = new Types.ObjectId(userId);
   const interval = query.interval;
 
-  const todayStart = bucketStart(new Date(), 'day');
-  const toDay = query.to ? dayStart(query.to) : todayStart;
-  const fromDay = query.from ? dayStart(query.from) : new Date(toDay.getTime() - 29 * DAY);
-  const toExcl = new Date(toDay.getTime() + DAY);
-  const days = Math.round((toExcl.getTime() - fromDay.getTime()) / DAY);
-  const prevFrom = new Date(fromDay.getTime() - days * DAY);
+  const tz = query.tz;
+
+  const toCal = query.to ? dayStart(query.to) : todayIn(tz);
+  const fromCal = query.from ? dayStart(query.from) : new Date(toCal.getTime() - 29 * DAY);
+  if (fromCal > toCal) throw new HttpError(400, 'from must be on or before to');
+  const toExclCal = new Date(toCal.getTime() + DAY);
+  const days = Math.round((toExclCal.getTime() - fromCal.getTime()) / DAY);
   if (days > 3660) throw new HttpError(400, 'Date range is too large');
+  const prevFromCal = new Date(fromCal.getTime() - days * DAY);
+  const fromDay = bound(fromCal, tz);
+  const toExcl = bound(toExclCal, tz);
+  const prevFrom = bound(prevFromCal, tz);
+
+  // Credits with a successful refund debit are not revenue. (distinct is capped at 16MB; fine for now.)
+  const refunded: Types.ObjectId[] = await TransactionModel.distinct('refundOf', {
+    owner, status: 'successful', type: 'debit', refundOf: { $exists: true },
+  });
 
   const inPeriod = { createdAt: { $gte: fromDay, $lt: toExcl } };
-  const revenueMatch = { ...inPeriod, status: 'successful', type: 'credit' };
+  const revenueMatch = { ...inPeriod, status: 'successful', type: 'credit', _id: { $nin: refunded } };
 
-  const [[facets], customerCount] = await Promise.all([
+  const [[facets], [balanceRow], customerCount] = await Promise.all([
     TransactionModel.aggregate([
-      { $match: { owner } },
+      // Narrow to the period (and its previous period) before faceting; balance is separate below.
+      { $match: { owner, createdAt: { $gte: prevFrom, $lt: toExcl } } },
       {
         $facet: {
-          balance: [
-            { $match: { status: 'successful' } },
-            { $group: { _id: null, total: { $sum: { $cond: [{ $eq: ['$type', 'credit'] }, '$amount', { $multiply: ['$amount', -1] }] } } } },
-          ],
-          current: periodStats(fromDay, toExcl),
-          previous: periodStats(prevFrom, fromDay),
+          current: periodStats(fromDay, toExcl, refunded),
+          previous: periodStats(prevFrom, fromDay, refunded),
           series: [
             { $match: revenueMatch },
             {
               $group: {
-                _id: { $dateTrunc: { date: '$createdAt', unit: interval, startOfWeek: 'monday', timezone: 'UTC' } },
+                // Local calendar date (in tz) of the bucket start, e.g. "2026-10-19".
+                _id: {
+                  $dateToString: {
+                    format: '%Y-%m-%d',
+                    timezone: tz,
+                    date: { $dateTrunc: { date: '$createdAt', unit: interval, startOfWeek: 'monday', timezone: tz } },
+                  },
+                },
                 amount: { $sum: '$amount' },
               },
             },
@@ -104,6 +156,10 @@ export const getOverviewService = async (userId: string, query: OverviewQuery) =
         },
       },
     ]),
+    TransactionModel.aggregate([
+      { $match: { owner, status: 'successful' } },
+      { $group: { _id: null, total: { $sum: { $cond: [{ $eq: ['$type', 'credit'] }, '$amount', { $multiply: ['$amount', -1] }] } } } },
+    ]),
     CustomerModel.countDocuments({ owner }),
   ]);
 
@@ -111,16 +167,18 @@ export const getOverviewService = async (userId: string, query: OverviewQuery) =
   const prev = facets.previous[0] ?? { count: 0, revenue: 0 };
 
   const sums = new Map<string, number>(
-    facets.series.map((s: { _id: Date; amount: number }) => [isoDay(s._id), s.amount])
+    facets.series.map((s: { _id: string; amount: number }) => [s._id, s.amount])
   );
   const revenueSeries: { label: string; date: string; amount: number }[] = [];
-  for (let b = bucketStart(fromDay, interval); b < toExcl; b = nextBucket(b, interval)) {
-    revenueSeries.push({ label: labelOf(b, interval), date: isoDay(b), amount: sums.get(isoDay(b)) ?? 0 });
+  for (let b = bucketStart(fromCal, interval); b < toExclCal; b = nextBucket(b, interval)) {
+    // The first bucket may start before the range (partial week/month): show it from `from`.
+    const shown = b < fromCal ? fromCal : b;
+    revenueSeries.push({ label: labelOf(shown, interval), date: isoDay(shown), amount: sums.get(isoDay(b)) ?? 0 });
   }
 
   const idOf = (v?: Types.ObjectId) => (v ? String(v) : undefined);
   return {
-    balance: facets.balance[0]?.total ?? 0,
+    balance: balanceRow?.total ?? 0,
     totalRevenue: cur.revenue,
     totalPayouts: cur.payouts,
     transactionCount: cur.count,

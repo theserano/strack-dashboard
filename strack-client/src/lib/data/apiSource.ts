@@ -1,4 +1,5 @@
 import api from '@/lib/utils/axios';
+import { withTimeZone } from './overview';
 import type { DataSource, Id, ListParams, ListResult } from './types';
 
 // Server responses are shaped `{ data: ... }` (see user thunks).
@@ -51,7 +52,7 @@ export const apiSource: DataSource = {
     },
     submitCompliance: (userId) => unwrap(api.post('/user/compliance/submit', {}, { params: { userId } })),
   },
-  stats: { overview: (params) => unwrap(api.get('/stats/overview', { params })) },
+  stats: { overview: (params) => unwrap(api.get('/stats/overview', { params: withTimeZone(params) })) },
   reset: async () => {
     throw new Error('reset() is only available in demo mode');
   },

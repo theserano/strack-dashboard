@@ -32,8 +32,15 @@ const inRange = (t: Transaction, from: Date, toExclusive: Date) => {
   return ms >= from.getTime() && ms < toExclusive.getTime();
 };
 
-const revenueOf = (txns: Transaction[]) =>
-  txns.reduce((s, t) => (t.status === 'successful' && t.type === 'credit' ? s + t.amount : s), 0);
+/** Ids of credits that have a successful refund debit (any date). They are not revenue. */
+const refundedIds = (txns: Transaction[]) =>
+  new Set(txns.filter((t) => t.status === 'successful' && t.type === 'debit' && t.refundOf).map((t) => t.refundOf!));
+
+const isRevenue = (t: Transaction, refunded: Set<string>) =>
+  t.status === 'successful' && t.type === 'credit' && !refunded.has(t.id);
+
+const revenueOf = (txns: Transaction[], refunded: Set<string>) =>
+  txns.reduce((s, t) => (isRevenue(t, refunded) ? s + t.amount : s), 0);
 
 export function computeOverview(
   transactions: Transaction[],
@@ -49,6 +56,7 @@ export function computeOverview(
   const days = Math.max(1, Math.round((toExcl.getTime() - from.getTime()) / DAY));
   const prevFrom = addDays(from, -days);
 
+  const refunded = refundedIds(transactions);
   const cur = transactions.filter((t) => inRange(t, from, toExcl));
   const prev = transactions.filter((t) => inRange(t, prevFrom, from));
 
@@ -61,9 +69,10 @@ export function computeOverview(
     if (t.status !== 'successful') continue;
     ok++;
     if (t.type === 'debit') {
-      totalPayouts += t.amount;
+      if (!t.refundOf) totalPayouts += t.amount; // refunds are netted out of revenue, not payouts
       continue;
     }
+    if (refunded.has(t.id)) continue;
     const k = key(bucketStart(new Date(t.date), interval));
     sums.set(k, (sums.get(k) ?? 0) + t.amount);
     if (t.customerId && names.has(t.customerId)) {
@@ -76,11 +85,13 @@ export function computeOverview(
 
   const revenueSeries: RevenuePoint[] = [];
   for (let b = bucketStart(from, interval); b < toExcl; b = nextBucket(b, interval)) {
-    revenueSeries.push({ label: labelOf(b, interval), date: key(b), amount: sums.get(key(b)) ?? 0 });
+    // The first bucket may start before the range (partial week/month): show it from `from`.
+    const shown = b < from ? from : b;
+    revenueSeries.push({ label: labelOf(shown, interval), date: key(shown), amount: sums.get(key(b)) ?? 0 });
   }
 
-  const totalRevenue = revenueOf(cur);
-  const prevRevenue = revenueOf(prev);
+  const totalRevenue = revenueOf(cur, refunded);
+  const prevRevenue = revenueOf(prev, refunded);
   return {
     balance,
     totalRevenue,
@@ -98,3 +109,9 @@ export function computeOverview(
     recentTransactions: [...cur].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 5),
   };
 }
+
+/** Adds the browser's IANA time zone so the server buckets days the way the user sees them. */
+export const withTimeZone = (params: OverviewParams = {}, tz = Intl.DateTimeFormat().resolvedOptions().timeZone) => ({
+  ...params,
+  tz,
+});

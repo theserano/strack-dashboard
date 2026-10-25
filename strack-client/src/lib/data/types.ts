@@ -155,8 +155,9 @@ export interface TopCustomer {
 }
 
 /**
- * Overview figures. All amounts are integer kobo. Revenue = successful credits in the period;
- * payouts = successful debits; transactionCount and successRate cover every status in the period;
+ * Overview figures. All amounts are integer kobo. Revenue = successful credits in the period, net of
+ * refunds (a credit with a successful refund debit, `refundOf`, is excluded, as are its Top customers
+ * totals); payouts = successful debits that are not refunds (refunds are not shown separately); transactionCount and successRate cover every status in the period;
  * balance and customerCount are all-time. Percent changes compare with the equal-length period
  * just before and are null when that period was 0.
  */

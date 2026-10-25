@@ -13,6 +13,11 @@ export function formatMoney(kobo: number): string {
   return formatter.format(fromKobo(kobo));
 }
 
+/** Like formatMoney, but "—" when there is no value (loading or failed) instead of a misleading ₦0.00. */
+export function formatMoneyOrDash(kobo?: number | null): string {
+  return kobo === undefined || kobo === null ? '—' : formatMoney(kobo);
+}
+
 /** Kobo to naira as a number (display only). */
 export function fromKobo(kobo: number): number {
   return kobo / 100;

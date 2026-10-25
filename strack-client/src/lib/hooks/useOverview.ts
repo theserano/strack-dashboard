@@ -26,10 +26,15 @@ export function useOverview(days: number, interval: StatsInterval) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setData(null); // never show the previous mode/range's figures under a new selection
     getDataSource(mode)
       .stats.overview({ ...lastDays(days), interval })
       .then((d) => !cancelled && setData(d))
-      .catch((e) => !cancelled && setError(getErrorMessage(e)))
+      .catch((e) => {
+        if (cancelled) return;
+        setData(null);
+        setError(getErrorMessage(e));
+      })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
