@@ -1,4 +1,4 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { loginUser, logoutUser, signUpUser } from './thunkActions';
 
 export const enum AccountType {
@@ -11,6 +11,10 @@ export interface AuthState {
   isLoggingIn?: boolean;
   isLoggingOut?: boolean;
   signUpData?: unknown;
+  /** 'demo' uses the local data source instead of the server. */
+  mode: 'live' | 'demo';
+  /** True once persisted session data has been read from storage (after mount). */
+  hydrated: boolean;
 }
 
 export const initialAuthState: AuthState = {
@@ -18,12 +22,21 @@ export const initialAuthState: AuthState = {
   isLoggingIn: false,
   isLoggingOut: false,
   signUpData: undefined,
+  mode: 'live',
+  hydrated: false,
 };
 
 export const authSlice = createSlice({
   name: 'auth',
   initialState: initialAuthState,
-  reducers: {},
+  reducers: {
+    setMode: (state, action: PayloadAction<'live' | 'demo'>) => {
+      state.mode = action.payload;
+    },
+    setHydrated: (state) => {
+      state.hydrated = true;
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(signUpUser.pending, (state) => {
@@ -57,6 +70,6 @@ export const authSlice = createSlice({
   },
 });
 
-export const {} = authSlice.actions;
+export const { setMode, setHydrated } = authSlice.actions;
 
 export default authSlice.reducer;
