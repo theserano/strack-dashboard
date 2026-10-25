@@ -1,6 +1,6 @@
 'use client';
 import { mainNav, otherNav } from '../utils/config';
-import { Avatar, AvatarFallback, AvatarImage } from '../../../@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '../../../@/components/ui/avatar';
 import { Separator } from '../../../@/components/ui/separator';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -18,6 +18,16 @@ const Sidebar = ({ open = false, onClose }: { open?: boolean; onClose?: () => vo
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { isLoggingOut } = useAppSelector((state) => state.auth);
+  const currentUser = useAppSelector((state) => state.user.user);
+  const displayName =
+    [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ') || currentUser?.businessName || 'Your account';
+  const initials =
+    displayName
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || '?';
 
   // Below 640px the sidebar is a slide-in drawer; close it after navigating.
   useEffect(() => {
@@ -165,14 +175,13 @@ const Sidebar = ({ open = false, onClose }: { open?: boolean; onClose?: () => vo
 
         <div className="p-4 lg:p-6 flex items-center sm:justify-center lg:justify-start gap-3">
           <Avatar className="h-10 w-10">
-            <AvatarImage src="https://github.com/shadcn.png" alt="Emmanuel Edward" />
-            <AvatarFallback className="bg-primary text-primary-foreground">ZS</AvatarFallback>
+            <AvatarFallback className="bg-primary text-primary-foreground">{initials}</AvatarFallback>
           </Avatar>
 
           {/* Hide user details in collapsed mode */}
           <div className="flex-1 min-w-0 sm:hidden lg:block">
-            <p className="text-sm font-medium truncate">Emmanuel Edward</p>
-            <p className="text-xs text-muted-foreground truncate">emmanuel@straqa.com</p>
+            <p className="text-sm font-medium truncate">{displayName}</p>
+            <p className="text-xs text-muted-foreground truncate">{currentUser?.email ?? ''}</p>
           </div>
         </div>
       </div>
