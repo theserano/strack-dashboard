@@ -4,6 +4,7 @@ import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
 import { useAppSelector } from '@/lib/hook';
+import { useResetDemo } from '@/lib/components/DemoBanner';
 import { Camera, Key, Shield, User } from 'lucide-react';
 import { useState } from 'react';
 
@@ -20,6 +21,8 @@ const tabIcons: Record<Tab, React.ElementType> = {
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Profile');
   const { user } = useAppSelector((state) => state.user);
+  const demo = useAppSelector((state) => state.auth.mode) === 'demo';
+  const { openReset, dialog: resetDialog } = useResetDemo();
 
   const [firstName, setFirstName] = useState(user?.firstName || '');
   const [lastName, setLastName] = useState(user?.lastName || '');
@@ -57,6 +60,17 @@ export default function SettingsPage() {
         </aside>
 
         <div className="flex-1">
+          {demo && (
+            <section className="mb-6 flex items-center justify-between rounded-xl border border-[#E1E4EA] bg-white p-4">
+              <div>
+                <p className="text-sm font-medium text-[#0E121B]">Demo data</p>
+                <p className="text-xs text-[#99A0AE]">Restore the original sample data in this browser.</p>
+              </div>
+              <CustomButton text="Reset demo data" className="!w-auto px-4 !h-9 text-sm" onClick={openReset} />
+            </section>
+          )}
+          {resetDialog}
+
           {activeTab === 'Profile' && (
             <section className="border border-[#E1E4EA] rounded-xl bg-white">
               <div className="p-5 border-b border-[#E1E4EA]">

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { Provider } from 'react-redux';
 import { makeStore, AppStore } from '../lib/store';
-import { SESSION_EXPIRED_EVENT } from '../lib/utils/axios';
+import { SESSION_EXPIRED_EVENT, setNetworkBlocked } from '../lib/utils/axios';
 import { clearUser, setUser } from '../lib/features/user/slice';
 import { setHydrated, setMode } from '../lib/features/auth/slice';
 
@@ -26,7 +26,10 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
       // Ignore unreadable or blocked storage.
     }
     try {
-      if (localStorage.getItem(MODE_KEY) === 'demo') store.dispatch(setMode('demo'));
+      if (localStorage.getItem(MODE_KEY) === 'demo') {
+        setNetworkBlocked(true);
+        store.dispatch(setMode('demo'));
+      }
     } catch {
       // Ignore unreadable or blocked storage.
     }
@@ -46,6 +49,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
       const mode = store.getState().auth.mode;
       if (mode !== lastMode) {
         lastMode = mode;
+        setNetworkBlocked(mode === 'demo');
         try {
           localStorage.setItem(MODE_KEY, mode);
         } catch {

@@ -13,7 +13,4 @@ describe('getDataSource', () => {
   it('returns the local source in demo mode', () => {
     expect(getDataSource('demo')).toBe(localSource);
   });
-  it('local stub throws until Phase 1', () => {
-    expect(() => getDataSource('demo').customers.list()).toThrow('Demo mode arrives in Phase 1');
-  });
 });

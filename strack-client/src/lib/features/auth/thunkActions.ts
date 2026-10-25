@@ -67,9 +67,10 @@ export const loginUser = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logoutUser',
-  async ({ onFailure, onSuccess }: ReduxAction, { dispatch, rejectWithValue }) => {
+  async ({ onFailure, onSuccess }: ReduxAction, { dispatch, getState, rejectWithValue }) => {
     try {
-      await api.post('/auth/logout');
+      // Demo has no server session to end.
+      if ((getState() as { auth: { mode: string } }).auth.mode !== 'demo') await api.post('/auth/logout');
       tokenManager.clear();
       dispatch(clearUser());
       if (onSuccess) onSuccess(null);
