@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DEFAULT_TZ, validTz } from '../stats/stats.validation';
 import { TRANSACTION_STATUSES, TRANSACTION_TYPES } from './transaction.schema';
 
+const objectId = z.string().trim().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 const day = z.iso.date('Must be YYYY-MM-DD');
 export const MAX_NOTE = 500;
 
@@ -16,10 +17,10 @@ export const listTransactionsQuerySchema = z
     from: day.optional(),
     to: day.optional(),
     tz: z.string().max(64).refine(validTz, 'Invalid time zone').default(DEFAULT_TZ),
-    customerId: z.string().trim().max(64).optional(),
-    paymentLinkId: z.string().trim().max(64).optional(),
+    customerId: objectId.optional(),
+    paymentLinkId: objectId.optional(),
     // The refund of this transaction (at most one).
-    refundOf: z.string().trim().max(64).optional(),
+    refundOf: objectId.optional(),
   })
   .refine((q) => !q.from || !q.to || q.from <= q.to, { message: 'from must be on or before to' });
 

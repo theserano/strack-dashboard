@@ -36,8 +36,13 @@ export interface CreditInput {
 }
 
 /** Records a successful credit for `owner`. The caller has already checked ownership of the ids. */
-export const createCreditTransaction = (input: CreditInput) =>
-  TransactionModel.create({ ...input, type: 'credit', status: 'successful', reference: newReference() });
+export const createCreditTransaction = async (input: CreditInput, session?: ClientSession) => {
+  const [t] = await TransactionModel.create(
+    [{ ...input, type: 'credit', status: 'successful', reference: newReference() }],
+    { session }
+  );
+  return t;
+};
 
 const ownerId = (userId: string) => {
   if (!Types.ObjectId.isValid(userId)) throw new HttpError(400, 'Invalid userId');
@@ -90,11 +95,11 @@ export const getTransactionService = async (userId: string, id: string) => {
 // transactions for the same owner then conflict on it and one is retried, so the balance check
 // each runs cannot be made stale by the other (no write skew).
 const OwnerLock = model('OwnerLock', new Schema({ seq: { type: Number, default: 0 } }, { versionKey: false }));
-const lockOwner = (owner: Types.ObjectId, session: ClientSession) =>
+export const lockOwner = (owner: Types.ObjectId, session: ClientSession) =>
   OwnerLock.updateOne({ _id: owner }, { $inc: { seq: 1 } }, { upsert: true, session });
 
 /** Successful credits minus successful debits (matches the client computeBalance). */
-const balanceOf = async (owner: Types.ObjectId, session: ClientSession): Promise<number> => {
+export const balanceOf = async (owner: Types.ObjectId, session: ClientSession): Promise<number> => {
   const [r] = await TransactionModel.aggregate<{ total: number }>([
     { $match: { owner, status: 'successful' } },
     { $group: { _id: null, total: { $sum: { $cond: [{ $eq: ['$type', 'credit'] }, '$amount', { $multiply: ['$amount', -1] }] } } } },
@@ -102,7 +107,7 @@ const balanceOf = async (owner: Types.ObjectId, session: ClientSession): Promise
   return r?.total ?? 0;
 };
 
-const inTransaction = async <T>(fn: (session: ClientSession) => Promise<T>): Promise<T> => {
+export const inTransaction = async <T>(fn: (session: ClientSession) => Promise<T>): Promise<T> => {
   const session = await mongoose.connection.startSession();
   try {
     let result!: T;
@@ -115,12 +120,29 @@ const inTransaction = async <T>(fn: (session: ClientSession) => Promise<T>): Pro
   }
 };
 
+/**
+ * Runs fn in a Mongo transaction after taking the owner's lock row. Concurrent callers for the same
+ * owner conflict on that row and one is retried, so checks made inside (balance, "link still exists")
+ * cannot be invalidated by another locked operation. Needs a replica set.
+ */
+export const withOwnerLock = async <T>(owner: Types.ObjectId, fn: (session: ClientSession) => Promise<T>): Promise<T> => {
+  // Create the row outside the transaction so concurrent first-time upserts can't fail on a duplicate key.
+  try {
+    await OwnerLock.updateOne({ _id: owner }, { $setOnInsert: { seq: 0 } }, { upsert: true });
+  } catch (e) {
+    if ((e as { code?: number })?.code !== 11000) throw e;
+  }
+  return inTransaction(async (session) => {
+    await lockOwner(owner, session);
+    return fn(session);
+  });
+};
+
 const contribution = (t: { type: string; status: string; amount: number }, status = t.status) =>
   status !== 'successful' ? 0 : t.type === 'credit' ? t.amount : -t.amount;
 
 const updateStatus = (owner: Types.ObjectId, id: Types.ObjectId, status: ITransaction['status']) =>
-  inTransaction(async (session) => {
-    await lockOwner(owner, session);
+  withOwnerLock(owner, async (session) => {
     const t = await TransactionModel.findOne({ _id: id, owner }).session(session);
     if (!t) throw new HttpError(404, 'Transaction not found');
     if (t.payoutId || t.refundOf) throw new HttpError(409, 'Payout and refund transactions cannot be changed');
@@ -153,8 +175,7 @@ export const refundTransactionService = async (userId: string, id: string) => {
   const owner = ownerId(userId);
   const _id = idOf(id);
   try {
-    const refund = await inTransaction(async (session) => {
-      await lockOwner(owner, session);
+    const refund = await withOwnerLock(owner, async (session) => {
       const orig = await TransactionModel.findOne({ _id, owner }).session(session);
       if (!orig) throw new HttpError(404, 'Transaction not found');
       if (orig.type !== 'credit' || orig.status !== 'successful' || orig.refundOf) {
@@ -186,7 +207,8 @@ export const refundTransactionService = async (userId: string, id: string) => {
     return toTransactionDto(refund);
   } catch (e) {
     // The unique {owner, refundOf} index is the backstop if the checks above were ever bypassed.
-    if ((e as { code?: number })?.code === 11000) throw new HttpError(409, 'This transaction has already been refunded');
+    const dup = e as { code?: number; keyPattern?: object };
+    if (dup?.code === 11000 && 'refundOf' in (dup.keyPattern ?? {})) throw new HttpError(409, 'This transaction has already been refunded');
     throw e;
   }
 };

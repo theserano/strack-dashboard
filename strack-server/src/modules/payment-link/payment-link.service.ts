@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { IPaymentLink, PaymentLinkModel } from './payment-link.schema';
 import { CustomerModel } from '../customer/customer.schema';
 import { TransactionModel } from '../transaction/transaction.schema';
-import { createCreditTransaction, toTransactionDto } from '../transaction/transaction.service';
+import { createCreditTransaction, toTransactionDto, withOwnerLock } from '../transaction/transaction.service';
 import { HttpError } from '../../utils/httpError';
 import type {
   CreatePaymentBody,
@@ -99,44 +99,57 @@ export const updatePaymentLinkService = async (userId: string, id: string, input
 
 export const deletePaymentLinkService = async (userId: string, id: string) => {
   const owner = ownerId(userId);
-  const res = await PaymentLinkModel.deleteOne({ _id: idOf(id), owner });
-  if (!res.deletedCount) throw new HttpError(404, 'Payment link not found');
-  // Keep the transactions, but do not leave them pointing at a link that no longer exists.
-  await TransactionModel.updateMany({ owner, paymentLinkId: idOf(id) }, { $unset: { paymentLinkId: 1 } });
+  const _id = idOf(id);
+  // Same lock as payments: a payment can't be recorded on a link that is being deleted.
+  await withOwnerLock(owner, async (session) => {
+    const res = await PaymentLinkModel.deleteOne({ _id, owner }, { session });
+    if (!res.deletedCount) throw new HttpError(404, 'Payment link not found');
+    // Keep the transactions, but do not leave them pointing at a link that no longer exists.
+    await TransactionModel.updateMany({ owner, paymentLinkId: _id }, { $unset: { paymentLinkId: 1 } }, { session });
+  });
 };
 
+// Simulated payments: no real money moves; payouts are simulated too. Gate behind a flag before
+// connecting a real payment rail.
 /** Simulates a customer paying the link: records a successful credit. */
 export const createPaymentService = async (userId: string, id: string, body: CreatePaymentBody) => {
   const owner = ownerId(userId);
-  const link = await PaymentLinkModel.findOne({ _id: idOf(id), owner });
-  if (!link) throw new HttpError(404, 'Payment link not found');
-  if (link.status !== 'active') throw new HttpError(409, 'This payment link is disabled');
+  const linkId = idOf(id);
+  const customerOid = body.customerId ? idOf(body.customerId, 'Customer') : undefined;
+  const txn = await withOwnerLock(owner, async (session) => {
+    const link = await PaymentLinkModel.findOne({ _id: linkId, owner }).session(session);
+    if (!link) throw new HttpError(404, 'Payment link not found');
+    if (link.status !== 'active') throw new HttpError(409, 'This payment link is disabled');
 
-  let amount: number;
-  if (link.amount !== undefined && link.amount !== null) {
-    if (body.amount !== undefined && body.amount !== link.amount) {
-      throw new HttpError(400, 'Amount does not match this payment link');
+    let amount: number;
+    if (link.amount !== undefined && link.amount !== null) {
+      if (body.amount !== undefined && body.amount !== link.amount) {
+        throw new HttpError(400, 'Amount does not match this payment link');
+      }
+      amount = link.amount;
+    } else {
+      if (body.amount === undefined) throw new HttpError(400, 'Enter a valid amount');
+      amount = body.amount;
     }
-    amount = link.amount;
-  } else {
-    if (body.amount === undefined) throw new HttpError(400, 'Enter a valid amount');
-    amount = body.amount;
-  }
 
-  let customerId: Types.ObjectId | undefined;
-  if (body.customerId) {
-    const customer = await CustomerModel.findOne({ _id: idOf(body.customerId, 'Customer'), owner }).select('_id');
-    if (!customer) throw new HttpError(404, 'Customer not found');
-    customerId = customer._id as Types.ObjectId;
-  }
+    let customerId: Types.ObjectId | undefined;
+    if (customerOid) {
+      const customer = await CustomerModel.findOne({ _id: customerOid, owner }).select('_id').session(session);
+      if (!customer) throw new HttpError(404, 'Customer not found');
+      customerId = customer._id as Types.ObjectId;
+    }
 
-  const txn = await createCreditTransaction({
-    owner,
-    amount,
-    channel: 'payment_link',
-    description: `Payment for ${link.title}`,
-    customerId,
-    paymentLinkId: link._id as Types.ObjectId,
+    return createCreditTransaction(
+      {
+        owner,
+        amount,
+        channel: 'payment_link',
+        description: `Payment for ${link.title}`,
+        customerId,
+        paymentLinkId: link._id as Types.ObjectId,
+      },
+      session
+    );
   });
   return toTransactionDto(txn);
 };

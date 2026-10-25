@@ -240,7 +240,7 @@ export default function PaymentPage() {
       className: 'text-right',
       render: (l) => (
         <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button type="button" aria-label={`Copy link for ${l.title}`} className="rounded p-1.5 text-gray-500 hover:bg-gray-100" onClick={() => copyLink(l)}>
+          <button type="button" aria-label={`Copy link for ${l.title}`} title="Demo link - public pay page not built yet" className="rounded p-1.5 text-gray-500 hover:bg-gray-100" onClick={() => copyLink(l)}>
             <Copy size={16} />
           </button>
           <button

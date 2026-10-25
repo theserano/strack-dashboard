@@ -39,3 +39,13 @@ describe('csv amount', () => {
     expect(toCsvAmount(t())).toBe(10);
   });
 });
+
+import { isNotFound } from './transactionForm';
+describe('isNotFound', () => {
+  it('detects 404 responses only', () => {
+    expect(isNotFound({ response: { status: 404 } })).toBe(true);
+    expect(isNotFound({ response: { status: 500 } })).toBe(false);
+    expect(isNotFound(new Error('x'))).toBe(false);
+    expect(isNotFound(null)).toBe(false);
+  });
+});

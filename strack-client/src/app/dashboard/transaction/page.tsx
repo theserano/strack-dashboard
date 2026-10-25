@@ -16,6 +16,7 @@ import {
   MAX_NOTE,
   presetRange,
   refundBlockReason,
+  isNotFound,
   statusLockReason,
   transactionCsvColumns,
   type DatePreset,
@@ -78,10 +79,10 @@ export default function TransactionPage() {
   }, [searchInput]);
 
   // Customer names for the table and the drawer (best effort: a failure just shows "-").
-  const [customers, setCustomers] = useState<Record<string, string>>({});
+  const [customers, setCustomers] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setCustomers({});
+    setCustomers(null);
     fetchAllPages<Customer>(getDataSource(mode).customers.list, {})
       .then((rows) => !cancelled && setCustomers(Object.fromEntries(rows.map((c) => [c.id, c.name]))))
       .catch(() => undefined);
@@ -89,7 +90,9 @@ export default function TransactionPage() {
       cancelled = true;
     };
   }, [mode]);
-  const customerName = (id?: string) => (id ? customers[id] ?? '-' : '-');
+  const nameIn = (map: Record<string, string> | null, id?: string) =>
+    !id ? '-' : !map ? '...' : map[id] ?? 'Deleted';
+  const customerName = (id?: string) => nameIn(customers, id);
 
   const [exporting, setExporting] = useState(false);
   const doExport = async () => {
@@ -99,12 +102,17 @@ export default function TransactionPage() {
       const { page: _p, limit: _l, ...filters } = params;
       void _p;
       void _l;
-      const rows = await fetchAllPages(getDataSource(mode).transactions.list, filters);
+      const ds = getDataSource(mode);
+      // Names come from the customers list: fetch it now if it has not loaded yet.
+      const map =
+        customers ??
+        Object.fromEntries((await fetchAllPages<Customer>(ds.customers.list, {})).map((c) => [c.id, c.name]));
+      const rows = await fetchAllPages(ds.transactions.list, filters);
       if (!rows.length) {
         showToast({ message: 'Nothing to export', description: 'There are no transactions to export.' });
         return;
       }
-      exportCsv(rows, transactionCsvColumns(customerName), 'transactions.csv');
+      exportCsv(rows, transactionCsvColumns((id) => nameIn(map, id)), 'transactions.csv');
     } catch (err) {
       showToast({ message: 'Error', description: getErrorMessage(err, 'Could not export transactions.') });
     } finally {
@@ -116,7 +124,10 @@ export default function TransactionPage() {
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [refundTxn, setRefundTxn] = useState<Transaction | null | undefined>(undefined); // the refund of `selected`
   const [original, setOriginal] = useState<Transaction | null>(null);
-  const [link, setLink] = useState<PaymentLink | null>(null);
+  const [link, setLink] = useState<PaymentLink | 'deleted' | 'error' | null>(null);
+  const [originalState, setOriginalState] = useState<'deleted' | 'error' | null>(null);
+  const [refundError, setRefundError] = useState(false);
+  const [lookupTick, setLookupTick] = useState(0);
   const [noteDraft, setNoteDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<TransactionStatus | null>(null);
@@ -131,20 +142,33 @@ export default function TransactionPage() {
     let cancelled = false;
     const ds = getDataSource(mode);
     setRefundTxn(undefined);
+    setRefundError(false);
     setOriginal(null);
+    setOriginalState(null);
     setLink(null);
     if (isCredit) {
       ds.transactions
         .list({ refundOf: selectedId, limit: 1 })
         .then((r) => !cancelled && setRefundTxn(r.items[0] ?? null))
-        .catch(() => !cancelled && setRefundTxn(undefined));
+        .catch(() => !cancelled && setRefundError(true));
     }
-    if (refundOf) ds.transactions.get(refundOf).then((t) => !cancelled && setOriginal(t)).catch(() => undefined);
-    if (paymentLinkId) ds.paymentLinks.get(paymentLinkId).then((l) => !cancelled && setLink(l)).catch(() => undefined);
+    if (refundOf) {
+      ds.transactions
+        .get(refundOf)
+        .then((t) => !cancelled && setOriginal(t))
+        .catch((e) => !cancelled && setOriginalState(isNotFound(e) ? 'deleted' : 'error'));
+    }
+    if (paymentLinkId) {
+      ds.paymentLinks
+        .get(paymentLinkId)
+        .then((l) => !cancelled && setLink(l))
+        .catch((e) => !cancelled && setLink(isNotFound(e) ? 'deleted' : 'error'));
+    }
     return () => {
       cancelled = true;
     };
-  }, [selectedId, refundOf, paymentLinkId, isCredit, mode]);
+  }, [selectedId, refundOf, paymentLinkId, isCredit, mode, lookupTick]);
+  const retryLookup = () => setLookupTick((t) => t + 1);
 
   const open = (t: Transaction) => {
     setSelected(t);
@@ -218,7 +242,8 @@ export default function TransactionPage() {
 
   const refunded = !!refundTxn;
   const refundReason = selected
-    ? refundBlockReason(selected, refunded) ?? (refundTxn === undefined && selected.type === 'credit' ? 'Checking refund status...' : null)
+    ? refundBlockReason(selected, refunded) ??
+      (refundError ? "Couldn't check refund status." : refundTxn === undefined && selected.type === 'credit' ? 'Checking refund status...' : null)
     : null;
   const statusLock = selected ? statusLockReason(selected, refunded) : null;
 
@@ -325,7 +350,11 @@ export default function TransactionPage() {
               <dt className="text-gray-500">Customer</dt>
               <dd>{customerName(selected.customerId)}</dd>
               <dt className="text-gray-500">Payment link</dt>
-              <dd>{selected.paymentLinkId ? link?.title ?? 'Loading...' : '-'}</dd>
+              <dd>
+                {!selected.paymentLinkId ? '-' : link === 'deleted' ? 'Deleted' : link === 'error' ? (
+                  <button type="button" className="underline" onClick={retryLookup}>Couldn&apos;t load - Retry</button>
+                ) : link ? link.title : 'Loading...'}
+              </dd>
               {selected.payoutId && (
                 <>
                   <dt className="text-gray-500">Payout</dt>
@@ -338,6 +367,8 @@ export default function TransactionPage() {
                   <dd>
                     {original ? (
                       <button type="button" className="font-mono text-xs underline" onClick={() => open(original)}>{original.reference}</button>
+                    ) : originalState === 'deleted' ? 'Deleted' : originalState === 'error' ? (
+                      <button type="button" className="underline" onClick={retryLookup}>Couldn&apos;t load - Retry</button>
                     ) : 'Loading...'}
                   </dd>
                 </>
@@ -348,7 +379,9 @@ export default function TransactionPage() {
                   <dd>
                     {refundTxn ? (
                       <button type="button" className="font-mono text-xs underline" onClick={() => open(refundTxn)}>{refundTxn.reference}</button>
-                    ) : refundTxn === null ? 'Not refunded' : 'Checking...'}
+                    ) : refundTxn === null ? 'Not refunded' : refundError ? (
+                      <button type="button" className="underline" onClick={retryLookup}>Couldn&apos;t check refund status - Retry</button>
+                    ) : 'Checking...'}
                   </dd>
                 </>
               )}

@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { CustomerModel, ICustomer } from './customer.schema';
 import { TransactionModel } from '../transaction/transaction.schema';
+import { withOwnerLock } from '../transaction/transaction.service';
 import { HttpError } from '../../utils/httpError';
 import type { CreateCustomerInput, ListCustomersQuery, UpdateCustomerInput } from './customer.validation';
 
@@ -87,8 +88,13 @@ export const updateCustomerService = async (userId: string, id: string, input: U
 };
 
 export const deleteCustomerService = async (userId: string, id: string) => {
-  const res = await CustomerModel.deleteOne({ _id: idOf(id), owner: ownerId(userId) });
-  if (!res.deletedCount) throw new HttpError(404, 'Customer not found');
-  // Keep the transactions, but do not leave them pointing at a customer that no longer exists.
-  await TransactionModel.updateMany({ owner: ownerId(userId), customerId: idOf(id) }, { $unset: { customerId: 1 } });
+  const owner = ownerId(userId);
+  const _id = idOf(id);
+  // Same lock as payments: a payment can't attach to a customer that is being deleted.
+  await withOwnerLock(owner, async (session) => {
+    const res = await CustomerModel.deleteOne({ _id, owner }, { session });
+    if (!res.deletedCount) throw new HttpError(404, 'Customer not found');
+    // Keep the transactions, but do not leave them pointing at a customer that no longer exists.
+    await TransactionModel.updateMany({ owner, customerId: _id }, { $unset: { customerId: 1 } }, { session });
+  });
 };

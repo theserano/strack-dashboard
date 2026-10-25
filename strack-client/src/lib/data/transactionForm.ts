@@ -45,3 +45,7 @@ export const transactionCsvColumns = (customerName: (id?: string) => string): Cs
   { header: 'Description', value: (t) => t.description },
   { header: 'Note', value: (t) => t.note },
 ];
+
+/** True when a failed request was a 404 (the linked record no longer exists). */
+export const isNotFound = (e: unknown): boolean =>
+  (e as { response?: { status?: number } })?.response?.status === 404;
