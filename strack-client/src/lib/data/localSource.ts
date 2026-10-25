@@ -144,6 +144,7 @@ function query<T extends object>(items: T[], p: ListParams = {}, searchKeys?: st
   if (p.paymentLinkId) rows = rows.filter((r) => (r as { paymentLinkId?: string }).paymentLinkId === p.paymentLinkId);
   if (p.refundOf) rows = rows.filter((r) => (r as { refundOf?: string }).refundOf === p.refundOf);
   if (p.status) rows = rows.filter((r) => (r as { status?: string }).status === p.status);
+  if (p.entity) rows = rows.filter((r) => (r as { entity?: string }).entity === p.entity);
   if (p.type) rows = rows.filter((r) => (r as { type?: string }).type === p.type);
   if (p.from) {
     const from = bound(p.from, false);
@@ -157,7 +158,8 @@ function query<T extends object>(items: T[], p: ListParams = {}, searchKeys?: st
   const sort = p.sort ?? (first && 'date' in first ? 'date' : first && 'createdAt' in first ? 'createdAt' : undefined);
   const dir = p.direction ?? 'desc';
   if (sort) {
-    rows = [...rows].sort((a, b) => {
+    // Ties (same millisecond) keep insertion order for asc and newest-first for desc, like the server's _id tie-break.
+    rows = (dir === 'asc' ? [...rows] : [...rows].reverse()).sort((a, b) => {
       const x = (a as Record<string, unknown>)[sort] as string | number;
       const y = (b as Record<string, unknown>)[sort] as string | number;
       const c = x < y ? -1 : x > y ? 1 : 0;
@@ -613,7 +615,8 @@ export const localSource: DataSource = {
     },
   },
   bankAccounts: bankAccountsSource,
-  activity: { list: async (p) => query<ActivityEvent>(load('activity'), p) },
+  // Like the server: search matches the description only.
+  activity: { list: async (p) => query<ActivityEvent>(load('activity'), p, ['description']) },
   support: {
     list: async (p) => query<SupportTicket>(load('support'), p),
     get: async (id) => findOrFail(load('support'), id, 'Ticket'),

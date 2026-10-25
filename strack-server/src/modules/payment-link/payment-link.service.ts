@@ -11,6 +11,7 @@ import type {
   ListPaymentLinksQuery,
   UpdatePaymentLinkInput,
 } from './payment-link.validation';
+import { logActivity } from '../activity/activity.service';
 
 // Every query below filters by `owner` (the id from the access token), so one account can never
 // read or change another account's payment links, customers or transactions.
@@ -76,6 +77,7 @@ export const createPaymentLinkService = async (userId: string, input: CreatePaym
   for (let attempt = 0; ; attempt++) {
     try {
       const l = await PaymentLinkModel.create({ ...input, owner, slug: makeSlug(input.title) });
+      await logActivity(owner, { action: 'create', entity: 'payment link', entityId: l._id as Types.ObjectId, description: `Created payment link ${l.title}` });
       return toDto(l);
     } catch (e) {
       if (!isSlugClash(e) || attempt >= 4) throw e;
@@ -92,9 +94,11 @@ export const updatePaymentLinkService = async (userId: string, id: string, input
   const owner = ownerId(userId);
   const _id = idOf(id);
   // Same lock as payments: disabling (or changing) a link waits for an in-flight payment and vice versa.
-  const l = await withOwnerLock(owner, (session) =>
-    PaymentLinkModel.findOneAndUpdate({ _id, owner }, update, { new: true, runValidators: true, session })
-  );
+  const l = await withOwnerLock(owner, async (session) => {
+    const updated = await PaymentLinkModel.findOneAndUpdate({ _id, owner }, update, { new: true, runValidators: true, session });
+    if (updated) await logActivity(owner, { action: 'update', entity: 'payment link', entityId: _id, description: `Updated payment link ${updated.title}` }, session);
+    return updated;
+  });
   if (!l) throw new HttpError(404, 'Payment link not found');
   return toDto(l);
 };
@@ -104,8 +108,9 @@ export const deletePaymentLinkService = async (userId: string, id: string) => {
   const _id = idOf(id);
   // Same lock as payments: a payment can't be recorded on a link that is being deleted.
   await withOwnerLock(owner, async (session) => {
-    const res = await PaymentLinkModel.deleteOne({ _id, owner }, { session });
-    if (!res.deletedCount) throw new HttpError(404, 'Payment link not found');
+    const l = await PaymentLinkModel.findOneAndDelete({ _id, owner }, { session });
+    if (!l) throw new HttpError(404, 'Payment link not found');
+    await logActivity(owner, { action: 'delete', entity: 'payment link', entityId: _id, description: `Deleted payment link ${l.title}` }, session);
     // Keep the transactions, but do not leave them pointing at a link that no longer exists.
     await TransactionModel.updateMany({ owner, paymentLinkId: _id }, { $unset: { paymentLinkId: 1 } }, { session });
   });
@@ -141,7 +146,7 @@ export const createPaymentService = async (userId: string, id: string, body: Cre
       customerId = customer._id as Types.ObjectId;
     }
 
-    return createCreditTransaction(
+    const created = await createCreditTransaction(
       {
         owner,
         amount,
@@ -152,6 +157,8 @@ export const createPaymentService = async (userId: string, id: string, body: Cre
       },
       session
     );
+    await logActivity(owner, { action: 'create', entity: 'transaction', entityId: created._id as Types.ObjectId, description: `Received payment for ${link.title}` }, session);
+    return created;
   });
   return toTransactionDto(txn);
 };

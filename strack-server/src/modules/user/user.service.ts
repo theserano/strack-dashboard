@@ -3,6 +3,7 @@ import { BaseUser, DOCUMENT_TYPES, DocumentType, StoredDocument, UserModel } fro
 import { BUSINESS_FIELDS, UpdateUserInput } from './user.validation';
 import { HttpError } from '../../utils/httpError';
 import { deleteFile, openFile, saveFile } from '../../utils/gridfs';
+import { logActivity } from '../activity/activity.service';
 
 const PERSONAL_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'dob', 'bvn'] as const;
 
@@ -59,6 +60,7 @@ export const updateUserService = async (userId: string, updates: UpdateUserInput
   user.set({ ...updates, ...(updates.dob && { dob: new Date(updates.dob) }) });
   markInProgress(user);
   await user.save();
+  await logActivity(userId, { action: 'update', entity: 'user', entityId: userId, description: 'Updated compliance details' });
   return toSafeUser(user);
 };
 
@@ -98,6 +100,7 @@ export const uploadDocumentsService = async (
 
   // Only remove the old files once the new ones are linked to the user.
   await Promise.all(replaced.map(deleteFile));
+  await logActivity(userId, { action: 'update', entity: 'user', entityId: userId, description: 'Uploaded compliance documents' });
   return toSafeUser(user);
 };
 
@@ -125,5 +128,6 @@ export const submitComplianceService = async (userId: string) => {
   user.complianceStatus = 'approved';
   user.verified = true;
   await user.save();
+  await logActivity(userId, { action: 'update', entity: 'user', entityId: userId, description: 'Submitted compliance for verification' });
   return toSafeUser(user);
 };

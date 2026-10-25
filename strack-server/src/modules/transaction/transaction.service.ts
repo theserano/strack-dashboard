@@ -4,6 +4,7 @@ import { ITransaction, TransactionModel } from './transaction.schema';
 import { bound, dayStart } from '../stats/stats.service';
 import { HttpError } from '../../utils/httpError';
 import type { ListTransactionsQuery, UpdateTransactionInput } from './transaction.validation';
+import { logActivity } from '../activity/activity.service';
 
 // Every query filters by `owner` (the id from the access token): another account's transactions are 404.
 
@@ -155,6 +156,7 @@ const updateStatus = (owner: Types.ObjectId, id: Types.ObjectId, status: ITransa
     if (next < 0 && next < before) throw new HttpError(409, 'This change would make the balance negative');
     t.status = status;
     await t.save({ session });
+    await logActivity(owner, { action: 'update', entity: 'transaction', entityId: id, description: `Marked transaction as ${status}` }, session);
     return t;
   });
 
@@ -168,6 +170,7 @@ export const updateTransactionService = async (userId: string, id: string, input
     { new: true }
   );
   if (!t) throw new HttpError(404, 'Transaction not found');
+  await logActivity(owner, { action: 'update', entity: 'transaction', entityId: _id, description: 'Updated the note on a transaction' });
   return toTransactionDto(t);
 };
 
@@ -202,6 +205,7 @@ export const refundTransactionService = async (userId: string, id: string) => {
         ],
         { session }
       );
+      await logActivity(owner, { action: 'create', entity: 'transaction', entityId: created._id as Types.ObjectId, description: `Refunded transaction ${orig.reference}` }, session);
       return created;
     });
     return toTransactionDto(refund);

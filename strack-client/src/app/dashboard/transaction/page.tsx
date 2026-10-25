@@ -176,6 +176,23 @@ export default function TransactionPage() {
     setPendingStatus(null);
     setConfirmRefund(false);
   };
+  // Deep link from the activity log: /dashboard/transaction?id=... opens that transaction's drawer.
+  const hydrated = useAppSelector((s) => s.auth.hydrated);
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (!id) return;
+    let cancelled = false;
+    getDataSource(mode)
+      .transactions.get(id)
+      .then((t) => !cancelled && open(t))
+      .catch(() => undefined); // gone or unreachable: just show the list
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, mode]);
+
   const close = () => {
     if (busy) return;
     setSelected(null);

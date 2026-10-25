@@ -63,7 +63,7 @@ export const apiSource: DataSource = {
     create: (input) => create('/payouts', input),
   },
   bankAccounts: resource('/bank-accounts'),
-  activity: { list: (p) => list('/activity', p) },
+  activity: { list: (p) => list('/activity', withTimeZone(p)) },
   support: {
     list: (p) => list('/support', p),
     get: (id) => get('/support', id),

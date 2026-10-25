@@ -4,6 +4,7 @@ import { TransactionModel } from '../transaction/transaction.schema';
 import { withOwnerLock } from '../transaction/transaction.service';
 import { HttpError } from '../../utils/httpError';
 import type { CreateCustomerInput, ListCustomersQuery, UpdateCustomerInput } from './customer.validation';
+import { logActivity } from '../activity/activity.service';
 
 // Every query below filters by `owner` (the id from the access token), so one account can never
 // read or change another account's customers.
@@ -66,6 +67,7 @@ export const createCustomerService = async (userId: string, input: CreateCustome
   const owner = ownerId(userId);
   try {
     const c = await CustomerModel.create({ ...input, owner });
+    await logActivity(owner, { action: 'create', entity: 'customer', entityId: c._id as Types.ObjectId, description: `Created customer ${c.name}` });
     return toDto(c);
   } catch (e) {
     return mapDuplicate(e);
@@ -81,6 +83,7 @@ export const updateCustomerService = async (userId: string, id: string, input: U
       { new: true, runValidators: true }
     );
     if (!c) throw new HttpError(404, 'Customer not found');
+    await logActivity(owner, { action: 'update', entity: 'customer', entityId: c._id as Types.ObjectId, description: `Updated customer ${c.name}` });
     return toDto(c);
   } catch (e) {
     return mapDuplicate(e);
@@ -92,8 +95,9 @@ export const deleteCustomerService = async (userId: string, id: string) => {
   const _id = idOf(id);
   // Same lock as payments: a payment can't attach to a customer that is being deleted.
   await withOwnerLock(owner, async (session) => {
-    const res = await CustomerModel.deleteOne({ _id, owner }, { session });
-    if (!res.deletedCount) throw new HttpError(404, 'Customer not found');
+    const c = await CustomerModel.findOneAndDelete({ _id, owner }, { session });
+    if (!c) throw new HttpError(404, 'Customer not found');
+    await logActivity(owner, { action: 'delete', entity: 'customer', entityId: _id, description: `Deleted customer ${c.name}` }, session);
     // Keep the transactions, but do not leave them pointing at a customer that no longer exists.
     await TransactionModel.updateMany({ owner, customerId: _id }, { $unset: { customerId: 1 } }, { session });
   });

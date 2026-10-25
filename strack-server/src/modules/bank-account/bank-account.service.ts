@@ -4,6 +4,7 @@ import { PayoutModel } from '../payout/payout.schema';
 import { withOwnerLock } from '../transaction/transaction.service';
 import { HttpError } from '../../utils/httpError';
 import type { CreateBankAccountInput, ListBankAccountsQuery, UpdateBankAccountInput } from './bank-account.validation';
+import { logActivity } from '../activity/activity.service';
 
 // Every query filters by `owner` (the id from the access token): another account's bank accounts are 404.
 // Anything that changes which account is the default, or deletes one, runs in withOwnerLock so it
@@ -67,6 +68,7 @@ export const createBankAccountService = async (userId: string, input: CreateBank
       const isDefault = !!input.isDefault || !(await BankAccountModel.exists({ owner }).session(session));
       if (isDefault) await unsetOtherDefaults(owner, null, session);
       const [b] = await BankAccountModel.create([{ ...input, isDefault, owner }], { session });
+      await logActivity(owner, { action: 'create', entity: 'bank account', entityId: b._id as Types.ObjectId, description: `Created bank account ${b.bankName} ${b.accountNumber}` }, session);
       return b;
     });
     return toBankAccountDto(created);
@@ -98,6 +100,7 @@ export const updateBankAccountService = async (userId: string, id: string, input
         b.isDefault = true;
       }
       await b.save({ session });
+      await logActivity(owner, { action: 'update', entity: 'bank account', entityId: _id, description: `Updated bank account ${b.bankName} ${b.accountNumber}` }, session);
       return b;
     });
     return toBankAccountDto(updated);
@@ -116,6 +119,7 @@ export const deleteBankAccountService = async (userId: string, id: string) => {
       throw new HttpError(409, 'This bank account has payouts and cannot be deleted');
     }
     await BankAccountModel.deleteOne({ _id, owner }, { session });
+    await logActivity(owner, { action: 'delete', entity: 'bank account', entityId: _id, description: `Deleted bank account ${b.bankName} ${b.accountNumber}` }, session);
     if (b.isDefault) {
       // Promote the oldest remaining account so the owner still has a default.
       const next = await BankAccountModel.findOne({ owner }).sort({ createdAt: 1, _id: 1 }).session(session);

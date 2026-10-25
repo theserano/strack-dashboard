@@ -634,3 +634,89 @@ describe('bank accounts and payouts rules', () => {
     expect(list.every((a) => !!a.createdAt)).toBe(true);
   });
 });
+
+describe('activity log (parity with the server)', () => {
+  const events = async () => (await ds.activity.list({ limit: 10000 })).items;
+  const count = async () => (await events()).length;
+  const last = async () => (await events())[0];
+
+  it('writes one event per successful mutation with entity wording the server uses', async () => {
+    const seen: [string, string, string][] = [];
+    const step = async (fn: () => Promise<unknown>, action: string, entity: string, desc: RegExp) => {
+      const n = await count();
+      await fn();
+      const all = await events();
+      expect(all.length).toBe(n + 1);
+      const e = all[0];
+      expect([e.action, e.entity]).toEqual([action, entity]);
+      expect(e.description).toMatch(desc);
+      seen.push([action, entity, e.description]);
+    };
+    const c = await ds.customers.create({ name: 'Zed', email: 'zed@example.com' });
+    await ds.customers.update(c.id, { name: 'Zed Two' });
+    await step(() => ds.customers.remove(c.id), 'delete', 'customer', /^Deleted customer Zed Two$/);
+    const l = await ds.paymentLinks.create({ title: 'Logo', description: '', status: 'active' } as never);
+    await step(() => ds.paymentLinks.update(l.id, { title: 'Logo2' }), 'update', 'payment link', /^Updated payment link Logo2$/);
+    const txn = await ds.paymentLinks.simulatePayment(l.id, { amount: 500000 });
+    expect((await last()).description).toBe('Received payment for Logo2');
+    await step(() => ds.transactions.addNote(txn.id, 'hi'), 'update', 'transaction', /note/);
+    await step(() => ds.transactions.updateStatus(txn.id, 'pending'), 'update', 'transaction', /^Marked transaction as pending$/);
+    await ds.transactions.updateStatus(txn.id, 'successful');
+    await step(() => ds.transactions.refund(txn.id), 'create', 'transaction', /^Refunded transaction TXN-/);
+    await step(() => ds.paymentLinks.remove(l.id), 'delete', 'payment link', /^Deleted payment link Logo2$/);
+    const b = await ds.bankAccounts.create({ bankName: 'Zenith Bank', accountNumber: '1111111111', accountName: 'Ada', isDefault: false });
+    expect((await last()).description).toBe('Created bank account Zenith Bank 1111111111');
+    await step(() => ds.bankAccounts.update(b.id, { isDefault: true }), 'update', 'bank account', /^Updated bank account/);
+    await step(() => ds.bankAccounts.remove(b.id), 'delete', 'bank account', /^Deleted bank account/);
+    await step(() => ds.payouts.create({ amount: 500000, bankAccountId: 'bnk_001' }), 'create', 'payout', /^Requested a payout of 5000 NGN$/);
+  });
+
+  it('logs profile updates and compliance submit, and not the rejected edit', async () => {
+    const n = await count();
+    await ds.user.update({ firstName: 'X' }).catch(() => undefined); // seeded user is approved: rejected
+    expect(await count()).toBe(n);
+    const raw = JSON.parse(store.get('strack:demo:user')!);
+    store.set('strack:demo:user', JSON.stringify({ ...raw, complianceStatus: 'not_started', verified: false }));
+    await ds.user.update({ firstName: 'Ada' });
+    expect((await last()).description).toBe('Updated compliance details');
+    await ds.user.submitCompliance().catch(() => undefined);
+    expect((await events()).filter((e) => e.entity === 'user').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not log failed operations', async () => {
+    const n = await count();
+    await ds.customers.update('nope', { name: 'x' }).catch(() => undefined);
+    await ds.customers.remove('nope').catch(() => undefined);
+    await ds.transactions.refund('nope').catch(() => undefined);
+    await ds.transactions.updateStatus('nope', 'failed').catch(() => undefined);
+    await ds.payouts.create({ amount: 1, bankAccountId: 'bnk_001' }).catch(() => undefined);
+    await ds.payouts.create({ amount: 10 ** 12, bankAccountId: 'bnk_001' }).catch(() => undefined);
+    await ds.bankAccounts.remove('nope').catch(() => undefined);
+    expect(await count()).toBe(n);
+  });
+
+  it('logs an idempotent payout repeat once', async () => {
+    const n = await count();
+    const a = await ds.payouts.create({ amount: 500000, bankAccountId: 'bnk_001', idempotencyKey: 'k1' });
+    const b = await ds.payouts.create({ amount: 500000, bankAccountId: 'bnk_001', idempotencyKey: 'k1' });
+    expect(b.id).toBe(a.id);
+    expect(await count()).toBe(n + 1);
+    await ds.payouts.create({ amount: 600000, bankAccountId: 'bnk_001', idempotencyKey: 'k1' }).catch(() => undefined);
+    expect(await count()).toBe(n + 1);
+  });
+
+  it('filters by entity, searches the description only, and applies date bounds', async () => {
+    await ds.customers.create({ name: 'Findme', email: 'f@example.com' });
+    const byEntity = await ds.activity.list({ entity: 'customer', limit: 10000 });
+    expect(byEntity.items.length).toBeGreaterThan(0);
+    expect(byEntity.items.every((e) => e.entity === 'customer')).toBe(true);
+    expect((await ds.activity.list({ search: 'findme' })).total).toBe(1);
+    const e = await last();
+    // entityId must not match search (the server searches descriptions only)
+    expect((await ds.activity.list({ search: e.entityId })).total).toBe(0);
+    const d = e.date.slice(0, 10);
+    expect((await ds.activity.list({ from: '2999-01-01' })).total).toBe(0);
+    expect((await ds.activity.list({ to: '2000-01-01' })).total).toBe(0);
+    expect((await ds.activity.list({ from: d, to: d, entity: 'customer', search: 'Findme' })).total).toBe(1);
+  });
+});

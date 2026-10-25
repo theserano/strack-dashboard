@@ -112,6 +112,10 @@ export interface ListParams {
   refundOf?: Id;
   /** Transactions only: restrict to one payment link. */
   paymentLinkId?: Id;
+  /** Activity only: restrict to one entity (e.g. 'customer', 'payment link'). */
+  entity?: string;
+  /** IANA time zone the from/to days are read in (server only; local uses the browser's). */
+  tz?: string;
   /** ISO dates, inclusive range. */
   from?: IsoDate;
   to?: IsoDate;

@@ -8,6 +8,7 @@ import { balanceOf, newReference, withOwnerLock } from '../transaction/transacti
 import { bound, dayStart } from '../stats/stats.service';
 import { HttpError } from '../../utils/httpError';
 import type { CreatePayoutInput, ListPayoutsQuery } from './payout.validation';
+import { logActivity } from '../activity/activity.service';
 
 // Every query filters by `owner` (the id from the access token): another account's payouts and
 // bank accounts are 404.
@@ -117,6 +118,7 @@ export const createPayoutService = async (userId: string, input: CreatePayoutInp
           ],
           { session }
         );
+        await logActivity(owner, { action: 'create', entity: 'payout', entityId: p._id as Types.ObjectId, description: `Requested a payout of ${input.amount / 100} NGN` }, session);
         return { payout: p, created: true };
       });
       return { payout: toPayoutDto(result.payout), created: result.created };

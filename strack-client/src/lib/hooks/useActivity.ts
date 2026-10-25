@@ -1,0 +1,40 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppSelector } from '@/lib/hook';
+import { getDataSource } from '@/lib/data';
+import { getErrorMessage } from '@/lib/features/user/thunkActions';
+import type { ActivityEvent, ListParams, ListResult } from '@/lib/data/types';
+
+/** Loads one page of the activity log for the current data mode. */
+export function useActivity(params: ListParams) {
+  const mode = useAppSelector((s) => s.auth.mode);
+  const hydrated = useAppSelector((s) => s.auth.hydrated);
+  const [data, setData] = useState<ListResult<ActivityEvent> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+  const latest = useRef(0);
+  const key = JSON.stringify(params);
+
+  useEffect(() => {
+    setData(null);
+  }, [mode]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = ++latest.current;
+    setLoading(true);
+    setError(null);
+    getDataSource(mode)
+      .activity.list(JSON.parse(key))
+      .then((r) => id === latest.current && setData(r))
+      .catch((e) => {
+        if (id !== latest.current) return;
+        setData(null);
+        setError(getErrorMessage(e));
+      })
+      .finally(() => id === latest.current && setLoading(false));
+  }, [mode, hydrated, key, tick]);
+
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
+  return { data, error, loading: loading || !hydrated, refetch };
+}
