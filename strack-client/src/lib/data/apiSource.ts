@@ -51,6 +51,7 @@ export const apiSource: DataSource = {
     },
     submitCompliance: (userId) => unwrap(api.post('/user/compliance/submit', {}, { params: { userId } })),
   },
+  stats: { overview: (params) => unwrap(api.get('/stats/overview', { params })) },
   reset: async () => {
     throw new Error('reset() is only available in demo mode');
   },

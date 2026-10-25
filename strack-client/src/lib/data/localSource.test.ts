@@ -321,3 +321,13 @@ describe('review fixes', () => {
     }
   });
 });
+
+describe('stats.overview (local source)', () => {
+  it('uses stored data and the computed balance', async () => {
+    const o = await ds.stats.overview({ from: '2000-01-01', to: '2100-01-01', interval: 'month' });
+    expect(o.balance).toBe(getDemoBalance());
+    expect(o.customerCount).toBe(40);
+    expect(o.transactionCount).toBe(250);
+    expect(o.topCustomers).toHaveLength(5);
+  });
+});

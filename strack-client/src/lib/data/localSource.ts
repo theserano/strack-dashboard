@@ -1,5 +1,6 @@
 import type { DocumentType, StoredDocument, User } from '@/lib/features/user/thunkActions';
 import { DEMO_USER_ID, PAYOUT_FEE, generateSeed, type DemoData } from './seed';
+import { computeOverview } from './overview';
 import type {
   ActivityEvent,
   BankAccount,
@@ -525,6 +526,12 @@ export const localSource: DataSource = {
       save('settings', next);
       logActivity('update', 'settings', 'settings', 'Updated settings');
       return next;
+    },
+  },
+  stats: {
+    overview: async (params) => {
+      const txns = load('transactions');
+      return computeOverview(txns, load('customers'), computeBalance(txns), params);
     },
   },
   reset: async () => {

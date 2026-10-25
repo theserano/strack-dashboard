@@ -126,6 +126,56 @@ export interface Resource<T, C = CreateInput<T>, U = UpdateInput<T>> {
   remove(id: Id): Promise<void>;
 }
 
+export type StatsInterval = 'day' | 'week' | 'month';
+
+export interface OverviewParams {
+  /** Local days (YYYY-MM-DD), inclusive. Default: the last 30 days ending today. */
+  from?: IsoDate;
+  to?: IsoDate;
+  interval?: StatsInterval;
+}
+
+export interface RevenuePoint {
+  /** Display label, e.g. "Oct 25" or "Oct 2026". */
+  label: string;
+  /** Bucket start, YYYY-MM-DD (weeks start on Monday). */
+  date: string;
+  /** Kobo: successful credits in the bucket (empty buckets are 0). */
+  amount: number;
+}
+
+export interface TopCustomer {
+  customerId: Id;
+  name: string;
+  /** Kobo: successful credits in the period. */
+  total: number;
+  count: number;
+}
+
+/**
+ * Overview figures. All amounts are integer kobo. Revenue = successful credits in the period;
+ * payouts = successful debits; transactionCount and successRate cover every status in the period;
+ * balance and customerCount are all-time. Percent changes compare with the equal-length period
+ * just before and are null when that period was 0.
+ */
+export interface Overview {
+  balance: number;
+  totalRevenue: number;
+  totalPayouts: number;
+  transactionCount: number;
+  customerCount: number;
+  /** 0-100, one decimal. 0 when there are no transactions. */
+  successRate: number;
+  previousPeriod: { totalRevenue: number; transactionCount: number };
+  revenueChange: number | null;
+  countChange: number | null;
+  revenueSeries: RevenuePoint[];
+  /** Top 5 by total, ties broken by count then name. */
+  topCustomers: TopCustomer[];
+  /** Latest 5 in the period (any status). */
+  recentTransactions: Transaction[];
+}
+
 import type { UpdateUserData, User, DocumentType } from '@/lib/features/user/thunkActions';
 
 export interface DataSource {
@@ -157,6 +207,7 @@ export interface DataSource {
     uploadDocuments(files: Partial<Record<DocumentType, File>>, userId?: Id): Promise<User>;
     submitCompliance(userId?: Id): Promise<User>;
   };
+  stats: { overview(params?: OverviewParams): Promise<Overview> };
   /** Demo mode: wipe local data and re-seed. Not supported by the api source. */
   reset(): Promise<void>;
   settings: {
