@@ -365,7 +365,9 @@ export const localSource: DataSource = {
       if (status !== 'successful' && all.some((x) => x.refundOf === id)) {
         fail('This transaction has been refunded and must stay successful');
       }
-      if (computeBalance(all.map((x) => (x.id === id ? { ...x, status } : x))) < 0) {
+      // Block only changes that leave the balance negative and lower than before.
+      const next = computeBalance(all.map((x) => (x.id === id ? { ...x, status } : x)));
+      if (next < 0 && next < computeBalance(all)) {
         fail('This change would make the balance negative');
       }
       return updateTransaction(id, { status }, `Marked transaction as ${status}`);

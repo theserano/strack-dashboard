@@ -236,6 +236,31 @@ describe('review fixes', () => {
     await rejects(ds.transactions.updateStatus(credit.id, 'failed'), 'negative');
     expect((await ds.transactions.get(credit.id)).status).toBe('successful');
   });
+  it('updateStatus allows lowering a balance that stays positive', async () => {
+    const txns = await all<{ id: string; type: string; status: string; amount: number; refundOf?: string; payoutId?: string }>(ds.transactions);
+    const credit = txns.find((t) => t.type === 'credit' && t.status === 'successful' && !txns.some((x) => x.refundOf === t.id))!;
+    const before = getDemoBalance();
+    expect(before).toBeGreaterThan(credit.amount);
+    await ds.transactions.updateStatus(credit.id, 'failed');
+    expect(getDemoBalance()).toBe(before - credit.amount);
+  });
+  it('updateStatus allows a change that raises an already negative balance', async () => {
+    const txns = JSON.parse(store.get('strack:demo:transactions')!);
+    const debit = { ...txns[0], id: 'txn_neg', type: 'debit', status: 'successful', amount: getDemoBalance() + 100_000 };
+    delete debit.payoutId;
+    delete debit.refundOf;
+    const small = { ...debit, id: 'txn_small', amount: 1_000 };
+    store.set('strack:demo:transactions', JSON.stringify([...txns, debit, small]));
+    const before = getDemoBalance();
+    expect(before).toBeLessThan(0);
+    // Failing the small debit raises the balance but it stays negative: allowed.
+    await ds.transactions.updateStatus('txn_small', 'failed');
+    expect(getDemoBalance()).toBe(before + 1_000);
+    // Failing a credit would lower it further: still blocked.
+    const credit = txns.find((t: { type: string; status: string; id: string }) =>
+      t.type === 'credit' && t.status === 'successful' && !txns.some((x: { refundOf?: string }) => x.refundOf === t.id));
+    await rejects(ds.transactions.updateStatus(credit.id, 'failed'), 'negative');
+  });
 
   const fakeIdb = (mode: 'ok' | 'abort' | 'blocked', delay = 0) => {
     const closed = vi.fn();
