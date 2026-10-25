@@ -53,10 +53,12 @@ function DataTable<T>({
 
   // Page is past the end (for example after a delete): go to the last page.
   const outOfRange = !!pagination && pagination.total > 0 && pagination.page > totalPages;
-  const onPageChange = pagination?.onPageChange;
+  // Kept in a ref so an inline callback doesn't re-fire the effect on every render.
+  const onPageChangeRef = React.useRef(pagination?.onPageChange);
+  onPageChangeRef.current = pagination?.onPageChange;
   React.useEffect(() => {
-    if (outOfRange) onPageChange?.(totalPages);
-  }, [outOfRange, totalPages, onPageChange]);
+    if (outOfRange) onPageChangeRef.current?.(totalPages);
+  }, [outOfRange, totalPages]);
 
   const isEmpty = pagination ? pagination.total === 0 : rows.length === 0;
 

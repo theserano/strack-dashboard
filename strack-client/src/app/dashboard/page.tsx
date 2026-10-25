@@ -2,11 +2,13 @@
 import { tokenManager } from '@/lib/utils/auth';
 import api from '@/lib/utils/axios';
 import { useRouter } from 'next/navigation';
-import { useAppSelector } from '@/lib/hook';
+import { useAppDispatch, useAppSelector } from '@/lib/hook';
+import { clearUser } from '@/lib/features/user/slice';
 import { useEffect } from 'react';
 
 export default function DashboardRootPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const mode = useAppSelector((s) => s.auth.mode);
   const hydrated = useAppSelector((s) => s.auth.hydrated);
@@ -27,7 +29,10 @@ export default function DashboardRootPage() {
           router.push('/dashboard/user');
         }
       })
-      .catch(() => router.push('/login'));
+      .catch(() => {
+        dispatch(clearUser()); // drop the stale saved user too
+        router.push('/login');
+      });
   }, [hydrated, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

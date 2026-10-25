@@ -20,12 +20,14 @@ export function fromKobo(kobo: number): number {
 
 /** "1,234.50" or 1234.5 -> 123450. Parses the decimal text so "0.29" gives 29, not 28.999. */
 export function toKobo(naira: string | number): number {
+  // Tiny numbers print in exponent form but are 0 kobo.
+  if (typeof naira === 'number' && Number.isFinite(naira) && Math.abs(naira) < 1e-6) return 0;
   let text = typeof naira === 'number' ? String(naira) : naira;
   if (/e/i.test(text)) throw new Error(`Invalid amount: ${naira}`); // exponent form loses precision
   text = text.replace(/[₦\s]/g, '');
   // Commas are only allowed as thousands separators: "1,234,567.89", not "1,2,3".
   if (text.includes(',')) {
-    if (!/^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(text)) throw new Error(`Invalid amount: ${naira}`);
+    if (!/^-?[1-9]\d{0,2}(,\d{3})+(\.\d*)?$/.test(text)) throw new Error(`Invalid amount: ${naira}`);
     text = text.replace(/,/g, '');
   }
   const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(text);

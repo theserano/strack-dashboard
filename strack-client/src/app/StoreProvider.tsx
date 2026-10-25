@@ -34,7 +34,10 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     store.dispatch(setHydrated());
 
     // Refresh failed: clear the user; the subscriber below also removes it from storage.
-    const onExpired = () => store.dispatch(clearUser());
+    // Ignored in demo: pages not yet on the data layer may still make live calls.
+    const onExpired = () => {
+      if (store.getState().auth.mode !== 'demo') store.dispatch(clearUser());
+    };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
 
     let last = store.getState().user.user;

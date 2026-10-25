@@ -27,7 +27,6 @@ describe('toKobo', () => {
   });
   it('rejects exponent-form numbers and misplaced commas', () => {
     expect(() => toKobo(1e21)).toThrow();
-    expect(() => toKobo(1e-7)).toThrow();
     expect(() => toKobo('1,2,3')).toThrow();
     expect(() => toKobo('12,34')).toThrow();
     expect(toKobo('1,234')).toBe(123400);
@@ -51,5 +50,15 @@ describe('formatMoney / fromKobo', () => {
   it('fromKobo divides by 100', () => {
     expect(fromKobo(123450)).toBe(1234.5);
     expect(fromKobo(57)).toBe(0.57);
+  });
+});
+
+describe('toKobo edge inputs', () => {
+  it('treats tiny numbers as 0 kobo', () => {
+    expect(toKobo(0.0000001)).toBe(0);
+  });
+  it('rejects a leading-zero thousands group', () => {
+    expect(() => toKobo('0,123')).toThrow();
+    expect(toKobo('1,234')).toBe(123400);
   });
 });
