@@ -9,6 +9,12 @@ export async function enterDemo(dispatch: AppDispatch) {
   // A live session must not survive into demo.
   tokenManager.clear();
   dispatch(clearUser());
+  // A fresh demo session shows the banner again, even if it was hidden last time.
+  try {
+    localStorage.removeItem('strack:ui:demoBannerHidden');
+  } catch {
+    // Storage blocked: nothing to clear.
+  }
   const user = await localSource.user.get();
   dispatch(setUser(user));
   dispatch(setMode('demo'));
