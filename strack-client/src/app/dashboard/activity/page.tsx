@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import ErrorState from '@/lib/components/ErrorState';
 import { useRouter } from 'next/navigation';
 import {
   Activity,
@@ -117,12 +118,7 @@ export default function ActivityPage() {
       </div>
       {badRange && <p role="alert" className="mt-2 text-xs text-red-600">The From date must be on or before the To date.</p>}
 
-      {error && (
-        <div role="alert" className="mt-4 flex items-center justify-between rounded-md bg-red-50 p-3 text-sm text-red-700">
-          <span>{error}</span>
-          <button type="button" className="font-medium underline" onClick={refetch}>Retry</button>
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={refetch} />}
 
       <section className="mt-4 rounded-xl border border-[#E1E4EA] bg-white">
         {loading && !data ? (

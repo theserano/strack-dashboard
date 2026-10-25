@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import ErrorState from '@/lib/components/ErrorState';
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import StatCard from '@/lib/components/StatCard';
 import StatusBadge from '@/lib/components/StatusBadge';
@@ -18,6 +21,7 @@ import {
   ArrowRightLeft,
   Receipt,
   CheckCircle2,
+  Link2,
 } from 'lucide-react';
 
 const RANGES = [
@@ -35,7 +39,8 @@ export default function DashboardPage() {
   const { user } = useAppSelector((state) => state.user);
   const [days, setDays] = useState(30);
   const [groupBy, setGroupBy] = useState<StatsInterval>('day');
-  const { data, error, loading } = useOverview(days, groupBy);
+  const { data, error, loading, refetch } = useOverview(days, groupBy);
+  const router = useRouter();
 
   const hasRevenue = !!data && data.revenueSeries.some((p) => p.amount > 0);
   const money = formatMoneyOrDash;
@@ -47,11 +52,7 @@ export default function DashboardPage() {
         headerDescription="Here's an overview of your account"
       />
 
-      {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-[#FBEAE9] px-4 py-3 text-sm text-[#9E0A05]">
-          {error}
-        </p>
-      )}
+      {error && <ErrorState message={error} onRetry={refetch} />}
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         <StatCard label="Total Balance" value={money(data?.balance)} icon={Wallet} loading={loading} hint="Available now" />
@@ -106,11 +107,11 @@ export default function DashboardPage() {
               <RevenueChart series={data!.revenueSeries} />
             ) : (
               <div className="h-[250px] flex items-center justify-center">
-                <EmptyState
+                {error ? <ErrorState variant="panel" message={error} onRetry={refetch} /> : <EmptyState
                   icon={<ArrowRightLeft className="w-10 h-10 text-[#E1E4EA]" aria-hidden />}
                   title="No revenue in this period"
                   description="Your revenue chart will appear here once you receive payments"
-                />
+                />}
               </div>
             )}
           </div>
@@ -145,7 +146,7 @@ export default function DashboardPage() {
               ))}
             </ol>
           ) : (
-            <EmptyState title="No customers yet" description="Customers who pay you will show up here" />
+            error ? <ErrorState variant="panel" message={error} onRetry={refetch} /> : <EmptyState title="No customers yet" description="Customers who pay you will show up here" action={<Link href="/dashboard/customer?new=1" className="text-sm font-medium underline">Add a customer</Link>} />
           )}
         </div>
       </section>
@@ -200,7 +201,7 @@ export default function DashboardPage() {
               </table>
             </div>
           ) : (
-            <EmptyState title="No transactions yet" description="Transactions in this period will appear here" />
+            error ? <ErrorState variant="panel" message={error} onRetry={refetch} /> : <EmptyState title="No transactions yet" description="Transactions in this period will appear here" action={<Link href="/dashboard/payment?simulate=1" className="text-sm font-medium underline">Simulate a payment</Link>} />
           )}
         </div>
 
@@ -210,14 +211,17 @@ export default function DashboardPage() {
           </div>
           <div className="p-5 flex flex-col gap-3">
             {[
-              { label: 'Send Money', icon: ArrowUpRight, color: '#020C14' },
-              { label: 'Request Payment', icon: ArrowDownLeft, color: '#020C14' },
-              { label: 'View Customers', icon: Users, color: '#020C14' },
+              { label: 'New payment link', icon: Link2, color: '#020C14', href: '/dashboard/payment?new=1' },
+              { label: 'Add customer', icon: Users, color: '#020C14', href: '/dashboard/customer?new=1' },
+              { label: 'Request payout', icon: ArrowUpRight, color: '#020C14', href: '/dashboard/payout?new=1' },
+              { label: 'Simulate a payment', icon: ArrowDownLeft, color: '#020C14', href: '/dashboard/payment?simulate=1' },
             ].map((action) => {
               const ActionIcon = action.icon;
               return (
                 <button
                   key={action.label}
+                  type="button"
+                  onClick={() => router.push(action.href)}
                   className="flex items-center gap-3 p-3 rounded-lg border border-[#E1E4EA] hover:bg-[#F7F9FC] transition-colors text-left w-full"
                 >
                   <div

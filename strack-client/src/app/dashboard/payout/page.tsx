@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { usePendingAction } from '@/lib/hooks/usePendingAction';
+import ErrorState from '@/lib/components/ErrorState';
 import { Download, Plus, Star, Trash2, Wallet } from 'lucide-react';
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
@@ -81,7 +83,15 @@ export default function PayoutPage() {
   const total = amount !== null && !amountError ? amount + PAYOUT_FEE : null;
   const blockReason = payoutBlockReason(balance, accounts.length > 0);
   const insufficient = total !== null && balance !== null && total > balance;
+  const [pendingAction, clearPending] = usePendingAction();
   const canReview = !blockReason && amount !== null && !amountError && !insufficient && !!accountId;
+
+  useEffect(() => {
+    if (pendingAction !== 'new' || accountsQ.loading || balance === null || balance === undefined) return;
+    clearPending();
+    if (!blockReason) openRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAction, accountsQ.loading, balance, blockReason]);
 
   const openRequest = () => {
     setAmountText('');
@@ -269,12 +279,7 @@ export default function PayoutPage() {
       </div>
       {badRange && <p role="alert" className="mt-2 text-xs text-red-600">The From date must be on or before the To date.</p>}
 
-      {error && (
-        <div role="alert" className="mt-4 flex items-center justify-between rounded-md bg-red-50 p-3 text-sm text-red-700">
-          <span>{error}</span>
-          <button type="button" className="font-medium underline" onClick={refetch}>Retry</button>
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={refetch} />}
 
       <div className="mt-4">
         <DataTable
@@ -286,6 +291,7 @@ export default function PayoutPage() {
           pagination={{ page, limit: LIMIT, total: data?.total ?? 0, onPageChange: setPage }}
           emptyTitle={filtered ? 'No payouts match your filters' : 'No payouts yet'}
           emptyDescription={filtered ? 'Try different filters or a wider date range.' : 'Request a payout to move money to your bank account.'}
+          emptyAction={filtered || blockReason ? undefined : <CustomButton text="Request payout" icon={<Plus size={16} />} onClick={openRequest} />}
         />
       </div>
 
@@ -300,12 +306,7 @@ export default function PayoutPage() {
             />
           </div>
         </div>
-        {accountsQ.error && (
-          <div role="alert" className="mt-3 flex items-center justify-between rounded-md bg-red-50 p-3 text-sm text-red-700">
-            <span>{accountsQ.error}</span>
-            <button type="button" className="font-medium underline" onClick={accountsQ.refetch}>Retry</button>
-          </div>
-        )}
+        {accountsQ.error && <ErrorState message={accountsQ.error} onRetry={accountsQ.refetch} />}
         <ul className="mt-3 grid gap-3 md:grid-cols-2">
           {accounts.map((a) => (
             <li key={a.id} className="flex items-start justify-between gap-3 rounded-lg border border-[#E1E4EA] p-4">

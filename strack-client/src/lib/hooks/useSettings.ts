@@ -12,6 +12,7 @@ export function useSettings() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setSettings(null);
@@ -25,7 +26,9 @@ export function useSettings() {
     return () => {
       current = false;
     };
-  }, [mode, hydrated]);
+  }, [mode, hydrated, tick]);
+
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
 
   const update = useCallback(
     async (input: SettingsUpdate): Promise<string | null> => {
@@ -45,5 +48,5 @@ export function useSettings() {
     [mode]
   );
 
-  return { settings, error, saving, update };
+  return { settings, error, saving, update, refetch };
 }

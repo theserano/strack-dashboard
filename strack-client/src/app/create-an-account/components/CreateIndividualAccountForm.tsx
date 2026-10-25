@@ -2,7 +2,7 @@
 import CustomHeading from '@/lib/components/CustomHeading';
 import React, { useState } from 'react';
 import { Button } from '../../../../@/components/ui/button';
-import { CheckCheck, ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import CustomText from '@/lib/components/CustomText';
 import CustomInput from '@/lib/components/CustomInput';
 import PasswordInput from '@/lib/components/PasswordInput';

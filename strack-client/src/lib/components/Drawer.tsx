@@ -81,7 +81,7 @@ const Drawer = ({ open, onClose, title, children, className }: Props) => {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={cn('flex h-full w-full max-w-md flex-col bg-white shadow-xl outline-none', className)}
+        className={cn('flex h-full w-full max-w-full flex-col sm:max-w-md bg-white shadow-xl outline-none', className)}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <h2 id={titleId} className="text-lg font-semibold text-gray-900">

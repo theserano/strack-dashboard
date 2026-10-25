@@ -1,6 +1,7 @@
 'use client';
 
 import HeaderSearch from '@/lib/components/HeaderSearch';
+import ErrorState from '@/lib/components/ErrorState';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
 import CustomSelect from '@/lib/components/CustomSelect';
@@ -328,11 +329,7 @@ export default function SupportPage() {
             <CustomButton text="New ticket" icon={<Plus className="w-4 h-4" />} className="!w-auto px-4 !h-10 text-sm" onClick={() => setCreating(true)} />
           </div>
         </div>
-        {(error || detailError) && (
-          <p role="alert" className="mt-3 text-sm text-red-600">
-            {error ?? detailError}
-          </p>
-        )}
+        {(error || detailError) && <ErrorState message={(error ?? detailError) as string} onRetry={error ? refetch : undefined} className="mt-3" />}
         <div className="mt-4">
           <DataTable
             columns={columns}
@@ -343,6 +340,7 @@ export default function SupportPage() {
             pagination={{ page, limit: LIMIT, total: data?.total ?? 0, onPageChange: setPage }}
             emptyTitle={status ? 'No tickets match this filter' : 'No tickets yet'}
             emptyDescription={status ? 'Try a different status.' : 'Open a ticket and our team will get back to you.'}
+            emptyAction={status ? undefined : <CustomButton text="New ticket" icon={<Plus className="w-4 h-4" />} className="!w-auto px-4 !h-10 text-sm" onClick={() => setCreating(true)} />}
           />
         </div>
       </section>

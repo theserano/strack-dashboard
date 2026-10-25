@@ -698,7 +698,8 @@ export const localSource: DataSource = {
       const current = load('user');
       assertEditable(current);
       // Demo mode has no password: the email-change check is server-only. currentPassword is never stored.
-      const { currentPassword: _ignored, ...fields } = data;
+      const fields: Record<string, unknown> = { ...data };
+      delete fields.currentPassword;
       const profileOnly = Object.keys(fields).every((k) => PROFILE_FIELDS.includes(k));
       // Only a compliance step moves the compliance status; a plain profile edit leaves it alone.
       const merged = { ...current, ...fields };

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import ErrorState from '@/lib/components/ErrorState';
 import { Download } from 'lucide-react';
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
@@ -190,7 +192,6 @@ export default function TransactionPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, mode]);
 
   const close = () => {
@@ -326,12 +327,7 @@ export default function TransactionPage() {
       </div>
       {badRange && <p role="alert" className="mt-2 text-xs text-red-600">The From date must be on or before the To date.</p>}
 
-      {error && (
-        <div role="alert" className="mt-4 flex items-center justify-between rounded-md bg-red-50 p-3 text-sm text-red-700">
-          <span>{error}</span>
-          <button type="button" className="font-medium underline" onClick={refetch}>Retry</button>
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={refetch} />}
 
       <div className="mt-4">
         <DataTable
@@ -343,6 +339,7 @@ export default function TransactionPage() {
           pagination={{ page, limit: LIMIT, total: data?.total ?? 0, onPageChange: setPage }}
           emptyTitle={filtered ? 'No transactions match your filters' : 'No transactions yet'}
           emptyDescription={filtered ? 'Try different filters or a wider date range.' : 'Payments and payouts will show up here.'}
+          emptyAction={filtered ? undefined : <Link href="/dashboard/payment?simulate=1" className="text-sm font-medium underline">Simulate a payment</Link>}
         />
       </div>
 

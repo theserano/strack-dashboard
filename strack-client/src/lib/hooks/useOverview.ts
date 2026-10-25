@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAppSelector } from '@/lib/hook';
 import { getDataSource } from '@/lib/data';
 import { getErrorMessage } from '@/lib/features/user/thunkActions';
@@ -20,6 +20,7 @@ export function useOverview(days: number, interval: StatsInterval) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -39,7 +40,8 @@ export function useOverview(days: number, interval: StatsInterval) {
     return () => {
       cancelled = true;
     };
-  }, [mode, hydrated, days, interval]);
+  }, [mode, hydrated, days, interval, tick]);
 
-  return { data, error, loading: loading || !hydrated };
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
+  return { data, error, loading: loading || !hydrated, refetch };
 }

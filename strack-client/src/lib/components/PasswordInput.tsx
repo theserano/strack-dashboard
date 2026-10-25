@@ -79,7 +79,7 @@ const PasswordInput = ({
   useEffect(() => {
     if (noCheck) return;
     checkIfPasswordIsNotValid(value);
-  }, [value]);
+  }, [value, noCheck]);
 
   return (
     <div className="grid w-full items-center gap-2 relative">

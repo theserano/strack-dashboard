@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePendingAction } from '@/lib/hooks/usePendingAction';
+import ErrorState from '@/lib/components/ErrorState';
 import { Copy, Link2, Pencil, Play, Plus, Power, Trash2 } from 'lucide-react';
 import HeaderSearch from '@/lib/components/HeaderSearch';
 import CustomButton from '@/lib/components/CustomButton';
@@ -96,6 +98,22 @@ export default function PaymentPage() {
     setErrors({});
     setFormOpen(true);
   };
+  const [pendingAction, clearPending] = usePendingAction(['new', 'simulate']);
+  useEffect(() => {
+    if (!pendingAction) return;
+    if (pendingAction === 'new') {
+      clearPending();
+      openCreate();
+      return;
+    }
+    if (loading) return;
+    clearPending();
+    const target = data?.items.find((l) => l.status === 'active');
+    if (target) openPay(target);
+    else openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAction, loading]);
+
   const openEdit = (l: PaymentLink) => {
     setEditing(l);
     setForm(toForm(l));
@@ -311,14 +329,7 @@ export default function PaymentPage() {
         <CustomButton text="Create link" icon={<Plus size={16} />} onClick={openCreate} />
       </div>
 
-      {error && (
-        <div role="alert" className="mt-4 flex items-center justify-between rounded-md bg-red-50 p-3 text-sm text-red-700">
-          <span>{error}</span>
-          <button type="button" className="font-medium underline" onClick={refetch}>
-            Retry
-          </button>
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={refetch} />}
 
       <div className="mt-4">
         <DataTable

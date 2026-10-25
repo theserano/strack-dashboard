@@ -1,6 +1,7 @@
 'use client';
 
 import HeaderSearch from '@/lib/components/HeaderSearch';
+import ErrorState from '@/lib/components/ErrorState';
 import CustomButton from '@/lib/components/CustomButton';
 import CustomInput from '@/lib/components/CustomInput';
 import { useAppDispatch, useAppSelector } from '@/lib/hook';
@@ -242,7 +243,7 @@ function SecuritySection({ demo }: { demo: boolean }) {
 }
 
 function NotificationsSection() {
-  const { settings, error, saving, update } = useSettings();
+  const { settings, error, saving, update, refetch } = useSettings();
   const toggle = async (key: keyof NotificationPrefs) => {
     if (!settings || saving) return;
     const err = await update({ notifications: { [key]: !settings.notifications[key] } });
@@ -250,7 +251,8 @@ function NotificationsSection() {
   };
   return (
     <Card title="Notification Preferences" desc="Choose how you want to be notified. Changes save immediately.">
-      {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && !settings && <ErrorState message={error} onRetry={refetch} className="mb-3 mt-0" />}
+      {error && settings && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
       <div className="space-y-4">
         {NOTIFICATION_ITEMS.map((item) => (
           <div key={item.key} className="flex items-center justify-between p-4 border border-[#E1E4EA] rounded-lg">

@@ -83,7 +83,7 @@ const Modal = ({ open, onClose, title, children, footer, className }: Props) => 
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={cn('w-full max-w-md rounded-lg bg-white p-6 shadow-xl outline-none', className)}
+        className={cn('max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-4 shadow-xl outline-none sm:p-6', className)}
       >
         <h2 id={titleId} className="text-lg font-semibold text-gray-900">
           {title}
