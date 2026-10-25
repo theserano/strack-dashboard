@@ -4,6 +4,8 @@ import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { env } from '../env';
 import { tokenManager } from './auth';
 
+export const SESSION_EXPIRED_EVENT = 'strack:session-expired';
+
 interface RetryableRequestConfig extends AxiosRequestConfig {
   _retry?: boolean;
 }
@@ -90,6 +92,8 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         tokenManager.clear();
+        // The session is gone: tell the store to drop the saved user (StoreProvider listens).
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
         // Optional: hard redirect on auth failure
         // window.location.href = '/login';
         return Promise.reject(refreshError);
