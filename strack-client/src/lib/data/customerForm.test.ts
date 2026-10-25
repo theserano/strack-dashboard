@@ -7,6 +7,7 @@ describe('validateCustomerForm', () => {
   it('flags name, email and length limits', () => {
     expect(validateCustomerForm({ ...ok, name: ' ' }).name).toBeTruthy();
     expect(validateCustomerForm({ ...ok, email: 'bad' }).email).toBeTruthy();
+    expect(validateCustomerForm({ ...ok, email: `${'a'.repeat(250)}@b.co` }).email).toMatch(/254/);
     expect(validateCustomerForm({ ...ok, notes: 'x'.repeat(1001) }).notes).toBeTruthy();
   });
 });

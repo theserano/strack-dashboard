@@ -299,7 +299,7 @@ const cleanCustomer = (input: Partial<Omit<Customer, 'id' | 'createdAt'>>, parti
       if (required && !partial) fail(`${k === 'name' ? 'Name' : 'Email'} is required`);
       return;
     }
-    const v = String(input[k]).trim();
+    const v = String(input[k] ?? '').trim(); // null -> '', never the text "null"
     if (required && !v) fail(`${k === 'name' ? 'Name' : 'Email'} is required`);
     if (v.length > max) fail(`${k} must be at most ${max} characters`);
     out[k] = v;

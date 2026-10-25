@@ -104,6 +104,7 @@ export default function CustomerPage() {
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (saving) return; // Enter in a field can submit twice while a save is in flight
     const v = validateCustomerForm(form);
     setErrors(v);
     if (Object.keys(v).length) return;

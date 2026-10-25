@@ -338,6 +338,10 @@ describe('stats.overview (local source)', () => {
       await rejects(ds.customers.create({ name: ' ', email: 'x@y.com' }), 'Name is required');
       await rejects(ds.customers.create({ name: 'X', email: 'nope' }), 'Invalid email');
     });
+    it('treats null optional fields as empty, not the text "null"', async () => {
+      const c = await ds.customers.create({ name: 'N', email: 'n@t.com', phone: null, notes: null } as never);
+      expect([c.phone, c.notes]).toEqual(['', '']);
+    });
     it('rejects a duplicate email (case-insensitive) with 409, on create and update', async () => {
       await ds.customers.create({ name: 'A', email: 'dup@t.com' });
       const err = await ds.customers.create({ name: 'B', email: 'DUP@t.com' }).catch((e) => e);

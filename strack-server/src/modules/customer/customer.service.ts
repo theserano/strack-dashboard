@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { CustomerModel, ICustomer } from './customer.schema';
+import { TransactionModel } from '../transaction/transaction.schema';
 import { HttpError } from '../../utils/httpError';
 import type { CreateCustomerInput, ListCustomersQuery, UpdateCustomerInput } from './customer.validation';
 
@@ -88,4 +89,6 @@ export const updateCustomerService = async (userId: string, id: string, input: U
 export const deleteCustomerService = async (userId: string, id: string) => {
   const res = await CustomerModel.deleteOne({ _id: idOf(id), owner: ownerId(userId) });
   if (!res.deletedCount) throw new HttpError(404, 'Customer not found');
+  // Keep the transactions, but do not leave them pointing at a customer that no longer exists.
+  await TransactionModel.updateMany({ owner: ownerId(userId), customerId: idOf(id) }, { $unset: { customerId: 1 } });
 };

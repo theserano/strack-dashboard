@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { escapeCsvCell, toCsv } from './exportCsv';
 
+describe('escapeCsvCell formula guard', () => {
+  it('guards formulas hidden behind leading whitespace', () => {
+    expect(escapeCsvCell(' =1+1')).toBe("' =1+1");
+    expect(escapeCsvCell('  @SUM(A1)')).toBe("'  @SUM(A1)");
+    expect(escapeCsvCell('+234801')).toBe("'+234801"); // documented: phones get the quote
+  });
+});
+
 describe('escapeCsvCell', () => {
   it('leaves plain text alone and blanks null', () => {
     expect(escapeCsvCell('hello')).toBe('hello');

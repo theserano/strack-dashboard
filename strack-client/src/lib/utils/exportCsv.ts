@@ -6,7 +6,9 @@ export interface CsvColumn<T> {
 /** Quotes a cell; prefixes a quote to cells a spreadsheet would run as a formula (= + - @, tab, CR). */
 export const escapeCsvCell = (raw: string | number | null | undefined): string => {
   let s = raw == null ? '' : String(raw);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // Leading whitespace is skipped by some spreadsheets before they decide it is a formula.
+  // Phone numbers like "+234..." also get the quote: a safe default, deliberately kept.
+  if (/^\s*[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) || s !== s.trim() ? `"${s.replace(/"/g, '""')}"` : s;
 };
 

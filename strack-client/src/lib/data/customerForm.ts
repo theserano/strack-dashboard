@@ -16,6 +16,7 @@ export const validateCustomerForm = (f: CustomerForm): Partial<Record<keyof Cust
   if (!f.name.trim()) e.name = 'Name is required';
   else if (f.name.trim().length > 100) e.name = 'Name must be at most 100 characters';
   if (!f.email.trim()) e.email = 'Email is required';
+  else if (f.email.trim().length > 254) e.email = 'Email must be at most 254 characters';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = 'Enter a valid email address';
   if (f.phone.trim().length > 30) e.phone = 'Phone must be at most 30 characters';
   if (f.notes.trim().length > 1000) e.notes = 'Notes must be at most 1000 characters';
