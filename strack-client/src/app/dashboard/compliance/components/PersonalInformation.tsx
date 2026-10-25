@@ -4,6 +4,7 @@ import CustomHeading from '@/lib/components/CustomHeading';
 import CustomText from '@/lib/components/CustomText';
 import CustomInput from '@/lib/components/CustomInput';
 import CustomButton from '@/lib/components/CustomButton';
+import { CustomDateInput, yearsAgo } from '@/lib/components/CustomDate';
 import { useAppSelector } from '@/lib/hook';
 import { useState } from 'react';
 
@@ -64,13 +65,16 @@ const PersonalInformation = () => {
           required
           maxLength={11}
         />
-        <CustomInput
+        <CustomDateInput
           id="pi-dob"
           label="Date of birth"
           value={dob}
           onChange={setDob}
-          placeholder="DD/MM/YYYY"
           required
+          minDate={yearsAgo(120)}
+          maxDate={new Date()}
+          defaultMonth={yearsAgo(25)}
+          rangeMessage="Date of birth can't be in the future"
         />
         <CustomInput
           id="pi-bvn"

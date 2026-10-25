@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(pkill -f \"ts-node index.ts\")",
+      "Bash(pkill -f \"nodemon\")"
+    ]
+  }
+}
