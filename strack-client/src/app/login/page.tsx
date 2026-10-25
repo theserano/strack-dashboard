@@ -14,6 +14,7 @@ import { Checkbox } from '../../../@/components/ui/checkbox';
 import { Label } from '../../../@/components/ui/label';
 import CustomButton from '@/lib/components/CustomButton';
 import { Button } from '../../../@/components/ui/button';
+import { isServerDown } from '@/lib/utils/serverDown';
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/lib/hook';
 import { enterDemo } from '@/lib/data/demoSession';
@@ -57,6 +58,7 @@ const Login = () => {
     const isValid = isValidInput();
     console.log(isValid);
     if (!isValid) return;
+    setServerDown(false);
 
     dispatch(
       loginUser({
@@ -75,7 +77,7 @@ const Login = () => {
         },
         onFailure: (error) => {
           // No response at all: server asleep, unreachable or timed out.
-          if (!(error as { response?: unknown })?.response) setServerDown(true);
+          if (isServerDown(error)) setServerDown(true);
           showToast({
             message: 'Error',
             description: 'Login failed. Please try again.',

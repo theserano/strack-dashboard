@@ -119,6 +119,14 @@ const itemDate = (item: object): string => {
   return r.date ?? r.createdAt ?? '';
 };
 
+/** Date-only bounds (YYYY-MM-DD) mean the user's local day; full timestamps are used as given. */
+const bound = (v: string, end: boolean): string => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return v;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  return (end ? new Date(y, mo, d, 23, 59, 59, 999) : new Date(y, mo, d, 0, 0, 0, 0)).toISOString();
+};
+
 function query<T extends object>(items: T[], p: ListParams = {}): ListResult<T> {
   let rows = items;
   if (p.search) {
@@ -129,9 +137,12 @@ function query<T extends object>(items: T[], p: ListParams = {}): ListResult<T> 
   }
   if (p.status) rows = rows.filter((r) => (r as { status?: string }).status === p.status);
   if (p.type) rows = rows.filter((r) => (r as { type?: string }).type === p.type);
-  if (p.from) rows = rows.filter((r) => itemDate(r) >= p.from!);
+  if (p.from) {
+    const from = bound(p.from, false);
+    rows = rows.filter((r) => itemDate(r) >= from);
+  }
   if (p.to) {
-    const to = p.to.length <= 10 ? `${p.to}T23:59:59.999Z` : p.to;
+    const to = bound(p.to, true);
     rows = rows.filter((r) => itemDate(r) <= to);
   }
   const first = items[0] as object | undefined;
@@ -158,23 +169,32 @@ const findOrFail = <T extends { id: Id }>(items: T[], id: Id, label: string): T 
 ------------------------------------------- */
 
 const storeBlob = async (fileId: string, file: File): Promise<void> => {
+  let db: IDBDatabase | undefined;
   try {
     if (typeof indexedDB === 'undefined') return;
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    db = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open('strack-demo', 1);
       req.onupgradeneeded = () => req.result.createObjectStore('files');
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('IndexedDB blocked'));
     });
+    const conn = db;
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('files', 'readwrite');
+      const tx = conn.transaction('files', 'readwrite');
       tx.objectStore('files').put(file, fileId);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB aborted'));
     });
-    db.close();
   } catch {
     // Metadata is still saved; the file content just isn't kept.
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // Ignore.
+    }
   }
 };
 
@@ -338,8 +358,18 @@ export const localSource: DataSource = {
   transactions: {
     list: async (p) => query(load('transactions'), p),
     get: async (id) => findOrFail(load('transactions'), id, 'Transaction'),
-    updateStatus: async (id, status: TransactionStatus) =>
-      updateTransaction(id, { status }, `Marked transaction as ${status}`),
+    updateStatus: async (id, status: TransactionStatus) => {
+      const all = load('transactions');
+      const t = findOrFail(all, id, 'Transaction');
+      if (t.payoutId || t.refundOf) fail('Payout and refund transactions cannot be changed');
+      if (status !== 'successful' && all.some((x) => x.refundOf === id)) {
+        fail('This transaction has been refunded and must stay successful');
+      }
+      if (computeBalance(all.map((x) => (x.id === id ? { ...x, status } : x))) < 0) {
+        fail('This change would make the balance negative');
+      }
+      return updateTransaction(id, { status }, `Marked transaction as ${status}`);
+    },
     addNote: async (id, note) => updateTransaction(id, { note }, 'Added a note to a transaction'),
     refund: async (id) => {
       const all = load('transactions');
@@ -453,9 +483,8 @@ export const localSource: DataSource = {
       return next;
     },
     uploadDocuments: async (files) => {
-      const current = load('user');
-      assertEditable(current);
-      const documents = { ...(current.documents ?? {}) };
+      assertEditable(load('user'));
+      const uploaded: Partial<Record<DocumentType, StoredDocument>> = {};
       for (const [type, file] of Object.entries(files) as [DocumentType, File | undefined][]) {
         if (!file) continue;
         const stored: StoredDocument = {
@@ -466,9 +495,12 @@ export const localSource: DataSource = {
           uploadedAt: nowIso(),
         };
         await storeBlob(stored.fileId, file);
-        documents[type] = stored;
+        uploaded[type] = stored;
       }
-      const next = withProgress(markInProgress({ ...current, documents }));
+      // Re-read after the awaits so edits made meanwhile are not lost.
+      const current = load('user');
+      assertEditable(current);
+      const next = withProgress(markInProgress({ ...current, documents: { ...(current.documents ?? {}), ...uploaded } }));
       save('user', next);
       logActivity('update', 'user', DEMO_USER_ID, 'Uploaded compliance documents');
       return next;

@@ -216,3 +216,83 @@ describe('compliance in demo', () => {
     await rejects(ds.user.uploadDocuments({}), 'no longer be edited');
   });
 });
+
+describe('review fixes', () => {
+  it('updateStatus rejects payout and refund transactions', async () => {
+    const txns = await all(ds.transactions);
+    await rejects(ds.transactions.updateStatus(txns.find((t) => t.payoutId)!.id, 'failed'), 'cannot be changed');
+    const orig = txns.find((t) => t.type === 'credit' && t.status === 'successful')!;
+    const r = await ds.transactions.refund(orig.id);
+    await rejects(ds.transactions.updateStatus(r.id, 'failed'), 'cannot be changed');
+  });
+  it('updateStatus keeps a refunded credit successful', async () => {
+    const orig = (await all(ds.transactions)).find((t) => t.type === 'credit' && t.status === 'successful')!;
+    await ds.transactions.refund(orig.id);
+    await rejects(ds.transactions.updateStatus(orig.id, 'failed'), 'must stay successful');
+  });
+  it('updateStatus cannot make the balance negative', async () => {
+    await ds.payouts.create({ amount: getDemoBalance() - 5000, bankAccountId: 'bnk_001' }); // balance 0
+    const credit = (await all(ds.transactions)).find((t) => t.type === 'credit' && t.status === 'successful' && !t.paymentLinkId === false)!;
+    await rejects(ds.transactions.updateStatus(credit.id, 'failed'), 'negative');
+    expect((await ds.transactions.get(credit.id)).status).toBe('successful');
+  });
+
+  const fakeIdb = (mode: 'ok' | 'abort' | 'blocked', delay = 0) => {
+    const closed = vi.fn();
+    const idb = {
+      open: () => {
+        const req: { onsuccess?: () => void; onblocked?: () => void; result: unknown } = { result: { createObjectStore: () => {}, close: closed, transaction: () => {
+          const tx: { onabort?: () => void; oncomplete?: () => void; objectStore: () => unknown } = { objectStore: () => ({ put: () => {} }) };
+          setTimeout(() => (mode === 'abort' ? tx.onabort?.() : tx.oncomplete?.()), delay);
+          return tx;
+        } } };
+        setTimeout(() => {
+          if (mode === 'blocked') req.onblocked?.();
+          else req.onsuccess?.();
+        }, 0);
+        return req;
+      },
+    };
+    vi.stubGlobal('indexedDB', idb);
+    return closed;
+  };
+  const file = { name: 'c.pdf', type: 'application/pdf', size: 10 } as File;
+  const fresh = () => {
+    const raw = JSON.parse(store.get('strack:demo:user')!);
+    store.set('strack:demo:user', JSON.stringify({ _id: raw._id, firstName: '', lastName: '', email: '', phone: '', accountType: 'business', complianceStatus: 'not_started' }));
+  };
+  it.each(['abort', 'blocked'] as const)('upload falls back to metadata when IndexedDB %s', async (mode) => {
+    fresh();
+    const closed = fakeIdb(mode);
+    const u = await ds.user.uploadDocuments({ cac: file });
+    expect(u.documents?.cac?.filename).toBe('c.pdf');
+    if (mode === 'abort') expect(closed).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+  it('upload does not lose an edit made while files are being stored', async () => {
+    fresh();
+    fakeIdb('ok', 20);
+    const up = ds.user.uploadDocuments({ cac: file });
+    await ds.user.update({ firstName: 'Edited' });
+    const u = await up;
+    expect(u.firstName).toBe('Edited');
+    expect(u.documents?.cac).toBeDefined();
+    vi.unstubAllGlobals();
+  });
+
+  it('date-only filters use the local day', async () => {
+    const orig = process.env.TZ;
+    process.env.TZ = 'Pacific/Auckland';
+    try {
+      const local = (h: number, m = 0) => new Date(2026, 5, 10, h, m, 0, 0).toISOString();
+      const base = JSON.parse(store.get('strack:demo:transactions')!)[0];
+      const mk = (id: string, date: string) => ({ ...base, id, date });
+      store.set('strack:demo:transactions', JSON.stringify([mk('early', local(0, 30)), mk('late', local(23, 30)), mk('prev', new Date(2026, 5, 9, 23, 30).toISOString()), mk('next', new Date(2026, 5, 11, 0, 30).toISOString())]));
+      const r = await ds.transactions.list({ from: '2026-06-10', to: '2026-06-10', limit: 50 });
+      expect(r.items.map((t) => t.id).sort()).toEqual(['early', 'late']);
+    } finally {
+      process.env.TZ = orig;
+      if (orig === undefined) delete process.env.TZ;
+    }
+  });
+});
