@@ -6,17 +6,19 @@ works when MongoDB Atlas is paused or Render is asleep.
 
 ## Where things stand (2026-10-25)
 
-| Page | Today |
+**All phases (0-7) are done.** Every dashboard page works in both demo and live mode, with loading,
+error (Retry) and empty states, and a mobile layout. See the README for the demo walkthrough.
+
+Order change: the Overview (phase 5 in the table below) was pulled forward and built right after
+demo mode, so the stats endpoint and the local stats existed before customers and transactions
+were wired up. The remaining phases then ran in table order.
+
+| Page | Status |
 |---|---|
-| Overview (`/dashboard/user`) | Hard-coded stats and recent transactions |
-| Transactions | Hard-coded list; tabs and search work on the fake data |
-| Customers | Hard-coded list; "Add Customer" does nothing |
-| Payments (links) | Hard-coded list; "Create Link" does nothing |
-| Payouts | Hard-coded list |
-| Activity Log | Hard-coded list |
-| Settings | Form fields, no saving |
-| Support | Form fields, no saving |
-| Compliance | **Working**: saves to MongoDB, uploads documents, verification |
+| Overview, Customers, Payment links, Transactions, Payouts | Done (demo + live) |
+| Activity log, Settings, Support | Done (demo + live) |
+| Compliance | Done |
+| Polish (states, mobile, Quick Actions, README) | Done |
 
 ## The core idea: one data layer, two backends
 
