@@ -1,4 +1,4 @@
-import api from '@/lib/utils/axios';
+import { getDataSource, type SessionMode } from '@/lib/data';
 import { ReduxAction } from '@/lib/utils/types';
 import { createAsyncThunk } from '@reduxjs/toolkit';
 
@@ -60,17 +60,19 @@ export type UpdateUserData = Partial<
 export const getErrorMessage = (error: unknown, fallback = 'Something went wrong. Please try again.') =>
   (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 
+const sourceFor = (getState: () => unknown) => getDataSource((getState() as { auth: { mode: SessionMode } }).auth.mode);
+
 export interface UserArgs extends ReduxAction {
   userId: string;
 }
 
 export const getUser = createAsyncThunk(
   'auth/getUser',
-  async ({ userId, onFailure, onSuccess }: UserArgs, { rejectWithValue }) => {
+  async ({ userId, onFailure, onSuccess }: UserArgs, { rejectWithValue, getState }) => {
     try {
-      const response = await api.get(`/user`, { params: { userId } });
-      if (onSuccess) onSuccess(response.data.data);
-      return response.data.data;
+      const user = await sourceFor(getState).user.get(userId);
+      if (onSuccess) onSuccess(user);
+      return user;
     } catch (error) {
       if (onFailure) onFailure(error);
       return rejectWithValue(error);
@@ -82,12 +84,12 @@ export const updateUser = createAsyncThunk(
   'user/updateUser',
   async (
     { userId, data, onFailure, onSuccess }: UserArgs & { data: UpdateUserData },
-    { rejectWithValue }
+    { rejectWithValue, getState }
   ) => {
     try {
-      const response = await api.patch(`/user`, data, { params: { userId } });
-      if (onSuccess) onSuccess(response.data.data);
-      return response.data.data as User;
+      const user = await sourceFor(getState).user.update(data, userId);
+      if (onSuccess) onSuccess(user);
+      return user;
     } catch (error) {
       if (onFailure) onFailure(error);
       return rejectWithValue(getErrorMessage(error));
@@ -99,19 +101,12 @@ export const uploadDocuments = createAsyncThunk(
   'user/uploadDocuments',
   async (
     { userId, files, onFailure, onSuccess }: UserArgs & { files: Partial<Record<DocumentType, File>> },
-    { rejectWithValue }
+    { rejectWithValue, getState }
   ) => {
     try {
-      const formData = new FormData();
-      Object.entries(files).forEach(([type, file]) => file && formData.append(type, file));
-      // The axios instance defaults to JSON, which would turn FormData into JSON.
-      const response = await api.post(`/user/documents`, formData, {
-        params: { userId },
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 60000,
-      });
-      if (onSuccess) onSuccess(response.data.data);
-      return response.data.data as User;
+      const user = await sourceFor(getState).user.uploadDocuments(files, userId);
+      if (onSuccess) onSuccess(user);
+      return user;
     } catch (error) {
       if (onFailure) onFailure(error);
       return rejectWithValue(getErrorMessage(error));
@@ -121,11 +116,11 @@ export const uploadDocuments = createAsyncThunk(
 
 export const submitCompliance = createAsyncThunk(
   'user/submitCompliance',
-  async ({ userId, onFailure, onSuccess }: UserArgs, { rejectWithValue }) => {
+  async ({ userId, onFailure, onSuccess }: UserArgs, { rejectWithValue, getState }) => {
     try {
-      const response = await api.post(`/user/compliance/submit`, {}, { params: { userId } });
-      if (onSuccess) onSuccess(response.data.data);
-      return response.data.data as User;
+      const user = await sourceFor(getState).user.submitCompliance(userId);
+      if (onSuccess) onSuccess(user);
+      return user;
     } catch (error) {
       if (onFailure) onFailure(error);
       return rejectWithValue(getErrorMessage(error));

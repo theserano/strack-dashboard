@@ -10,10 +10,13 @@ import useCreateAccountModel from './model/useCreateAccountModel';
 import CreateIndividualAccountForm from './components/CreateIndividualAccountForm';
 import CreateBusinessAccountForm from './components/CreateBusinessAccountForm';
 import { useRouter } from 'next/navigation';
+import { useAppDispatch } from '@/lib/hook';
+import { enterDemo } from '@/lib/data/demoSession';
 
 const CreateAccount = () => {
   const { activeCard, setActiveCard, step, setStep } = useCreateAccountModel();
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   return (
     <main className="flex flex-col lg:grid lg:grid-cols-[4fr_7fr] lg:h-screen">
@@ -56,6 +59,16 @@ const CreateAccount = () => {
             value="Login here"
             styleProps={{ color: '#667185', cursor: 'pointer' }}
             onClick={() => router.push(`/login`)}
+            isClickable
+          />
+          <CustomText
+            type="md"
+            value="Just looking? Try the demo"
+            styleProps={{ color: '#667185', cursor: 'pointer', textDecoration: 'underline' }}
+            onClick={async () => {
+              await enterDemo(dispatch);
+              router.push('/dashboard/user');
+            }}
             isClickable
           />
         </span>

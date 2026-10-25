@@ -51,7 +51,16 @@ const isAuthRequest = (url?: string) => !!url && url.startsWith('/auth/');
    REQUEST INTERCEPTOR
 ------------------------------------------- */
 
+// Demo mode never talks to the server. StoreProvider flips this; any call while it is on is a bug.
+let networkBlocked = false;
+export const setNetworkBlocked = (blocked: boolean) => {
+  networkBlocked = blocked;
+};
+
 api.interceptors.request.use(async (config) => {
+  if (networkBlocked) {
+    throw new Error(`Demo mode must not use the network (${config.method ?? 'get'} ${config.url ?? ''})`);
+  }
   let token = tokenManager.get();
 
   // After a reload: get a token first instead of sending the request without one.

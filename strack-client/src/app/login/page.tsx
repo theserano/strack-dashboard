@@ -14,14 +14,17 @@ import { Checkbox } from '../../../@/components/ui/checkbox';
 import { Label } from '../../../@/components/ui/label';
 import CustomButton from '@/lib/components/CustomButton';
 import { Button } from '../../../@/components/ui/button';
+import { isServerDown } from '@/lib/utils/serverDown';
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/lib/hook';
+import { enterDemo } from '@/lib/data/demoSession';
 import { loginUser } from '@/lib/features/auth/thunkActions';
 
 const Login = () => {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   // const [checked, setChecked] = useState<boolean>(false);
+  const [serverDown, setServerDown] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   const router = useRouter();
@@ -45,11 +48,17 @@ const Login = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const startDemo = async () => {
+    await enterDemo(dispatch);
+    router.push('/dashboard/user');
+  };
+
   const handleFormSubmission = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const isValid = isValidInput();
     console.log(isValid);
     if (!isValid) return;
+    setServerDown(false);
 
     dispatch(
       loginUser({
@@ -66,7 +75,9 @@ const Login = () => {
             },
           });
         },
-        onFailure: () => {
+        onFailure: (error) => {
+          // No response at all: server asleep, unreachable or timed out.
+          if (isServerDown(error)) setServerDown(true);
           showToast({
             message: 'Error',
             description: 'Login failed. Please try again.',
@@ -145,6 +156,14 @@ const Login = () => {
             isLoading={isLoggingIn}
             disabled={isLoggingIn}
           />
+          {serverDown && (
+            <p className="mb-2 text-sm text-[#B42318]" role="alert">
+              Our server is waking up. Try the demo instead?
+            </p>
+          )}
+          <Button type="button" variant="outline" onClick={startDemo}>
+            Try the demo
+          </Button>
         </form>
       </div>
     </main>

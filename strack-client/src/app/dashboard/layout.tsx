@@ -1,5 +1,6 @@
 'use client';
 import Sidebar from '@/lib/components/SideBar';
+import DemoBanner from '@/lib/components/DemoBanner';
 import { useDashboardGuard } from '@/lib/hooks/useDashboardGuard';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -15,9 +16,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">{children}</main>
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <DemoBanner />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      </div>
     </div>
   );
 }
