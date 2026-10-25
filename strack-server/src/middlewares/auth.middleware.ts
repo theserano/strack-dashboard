@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserModel } from '../modules/user/user.schema';
 
-export const authMiddleware = (handler: (req: Request, res: Response, next: NextFunction) => void) => {
+export const authMiddleware = (handler: (req: Request, res: Response, next: NextFunction) => unknown) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ message: 'Unauthorized' });
@@ -27,6 +27,7 @@ export const authMiddleware = (handler: (req: Request, res: Response, next: Next
     }
 
     req.user = payload;
-    handler(req, res, next);
+    // Return the handler's promise so Express 5 routes a rejection to the error handler instead of crashing.
+    return handler(req, res, next);
   };
 };

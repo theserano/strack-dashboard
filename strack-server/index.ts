@@ -12,6 +12,9 @@ const PORT = process.env.PORT || 3000;
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 
+// Render sits behind one proxy; trust it so rate limits key on the client IP.
+app.set('trust proxy', 1);
+
 app.use(
   cors({
     origin: CLIENT_ORIGIN,
