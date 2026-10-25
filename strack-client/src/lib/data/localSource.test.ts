@@ -133,13 +133,15 @@ describe('money flows', () => {
       ])
     ).toBe(700);
   });
-  it('simulatePayment credits the balance and creates a new customer', async () => {
+  it('simulatePayment credits the balance and links the chosen customer', async () => {
     const link = (await all(ds.paymentLinks)).find((l) => l.status === 'active' && l.amount)!;
+    const cus = (await all(ds.customers))[0];
     const [bal, n] = [getDemoBalance(), (await ds.customers.list()).total];
-    const t = await ds.paymentLinks.simulatePayment(link.id);
-    expect(t).toMatchObject({ type: 'credit', status: 'successful', amount: link.amount, paymentLinkId: link.id });
+    const t = await ds.paymentLinks.simulatePayment(link.id, { customerId: cus.id });
+    expect(t).toMatchObject({ type: 'credit', status: 'successful', amount: link.amount, paymentLinkId: link.id, customerId: cus.id, channel: 'payment_link' });
     expect(getDemoBalance()).toBe(bal + link.amount!);
-    expect((await ds.customers.list()).total).toBe(n + 1);
+    expect((await ds.customers.list()).total).toBe(n);
+    expect((await ds.transactions.list({ paymentLinkId: link.id, customerId: cus.id, limit: 10000 })).items.map((x) => x.id)).toContain(t.id);
   });
   it('payout creates a debit and reduces the balance', async () => {
     const bal = getDemoBalance();
@@ -371,5 +373,71 @@ describe('stats.overview (local source)', () => {
       expect(r.items.length).toBeGreaterThan(0);
       expect(r.items.every((x) => x.customerId === t.customerId)).toBe(true);
     });
+  });
+});
+
+describe('payment links (server semantics)', () => {
+  const status = async (p: Promise<unknown>) => p.then(() => 0, (e) => e.response.status as number);
+  const mk = (o: object = {}) => ds.paymentLinks.create({ title: 'Fee', status: 'active', ...o });
+
+  it('validates title, amount, description and unknown keys', async () => {
+    await rejects(mk({ title: '  ' }), 'Title is required');
+    await rejects(mk({ title: 'x'.repeat(101) }), 'at most 100');
+    await rejects(mk({ amount: 0 }), 'valid amount');
+    await rejects(mk({ amount: 10.5 }), 'valid amount');
+    await rejects(mk({ amount: 1e12 }), 'too large');
+    await rejects(mk({ description: 'x'.repeat(501) }), 'at most 500');
+    await rejects(mk({ slug: 'mine' }), 'Unrecognized');
+    await rejects(ds.paymentLinks.update((await mk()).id, { slug: 'x' } as never), 'Unrecognized');
+  });
+  it('generates unique slugs and trims the title; amount can be cleared', async () => {
+    const a = await mk({ title: ' Same ', amount: 500 });
+    const b = await mk({ title: 'Same' });
+    expect(a.title).toBe('Same');
+    expect(a.slug).not.toBe(b.slug);
+    expect(a.slug).toMatch(/^same-[0-9a-f]{8}$/);
+    const u = await ds.paymentLinks.update(a.id, { amount: null as never });
+    expect(u.amount).toBeUndefined();
+    expect((await ds.paymentLinks.update(a.id, { title: 'New' })).slug).toBe(a.slug);
+  });
+  it('list filters by status and searches title/description only', async () => {
+    const l = await mk({ title: 'Zebra Fee', description: 'stripes', status: 'disabled' });
+    expect((await ds.paymentLinks.list({ search: 'stripes' })).items.map((x) => x.id)).toEqual([l.id]);
+    expect((await ds.paymentLinks.list({ search: l.slug })).total).toBe(0);
+    const d = await ds.paymentLinks.list({ status: 'disabled', limit: 1000 });
+    expect(d.items.every((x) => x.status === 'disabled')).toBe(true);
+    expect(d.items.map((x) => x.id)).toContain(l.id);
+  });
+  it('deleting a link detaches its transactions', async () => {
+    const l = await mk({ amount: 700 });
+    const t = await ds.paymentLinks.simulatePayment(l.id);
+    await ds.paymentLinks.remove(l.id);
+    expect((await ds.transactions.get(t.id)).paymentLinkId).toBeUndefined();
+  });
+  it('simulatePayment: disabled is 409, unknown link 404', async () => {
+    const l = await mk({ amount: 700, status: 'disabled' });
+    expect(await status(ds.paymentLinks.simulatePayment(l.id))).toBe(409);
+    expect(await status(ds.paymentLinks.simulatePayment('nope'))).toBe(404);
+  });
+  it('simulatePayment: fixed link forbids a different amount, accepts the same or none', async () => {
+    const l = await mk({ amount: 700 });
+    expect(await status(ds.paymentLinks.simulatePayment(l.id, { amount: 701 }))).toBe(400);
+    expect((await ds.paymentLinks.simulatePayment(l.id, { amount: 700 })).amount).toBe(700);
+    expect((await ds.paymentLinks.simulatePayment(l.id)).amount).toBe(700);
+  });
+  it('simulatePayment: open link requires a valid amount', async () => {
+    const l = await mk();
+    expect(await status(ds.paymentLinks.simulatePayment(l.id))).toBe(400);
+    expect(await status(ds.paymentLinks.simulatePayment(l.id, { amount: 0 }))).toBe(400);
+    expect(await status(ds.paymentLinks.simulatePayment(l.id, { amount: 1.5 }))).toBe(400);
+    const bal = getDemoBalance();
+    expect((await ds.paymentLinks.simulatePayment(l.id, { amount: 1234 })).amount).toBe(1234);
+    expect(getDemoBalance()).toBe(bal + 1234);
+  });
+  it('simulatePayment: unknown customer is 404 and nothing is recorded', async () => {
+    const l = await mk({ amount: 700 });
+    const n = (await ds.transactions.list()).total;
+    expect(await status(ds.paymentLinks.simulatePayment(l.id, { customerId: 'cus_missing' }))).toBe(404);
+    expect((await ds.transactions.list()).total).toBe(n);
   });
 });

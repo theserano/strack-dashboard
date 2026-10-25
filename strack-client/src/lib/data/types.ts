@@ -102,6 +102,8 @@ export interface ListParams {
   type?: string;
   /** Transactions only: restrict to one customer. */
   customerId?: Id;
+  /** Transactions only: restrict to one payment link. */
+  paymentLinkId?: Id;
   /** ISO dates, inclusive range. */
   from?: IsoDate;
   to?: IsoDate;

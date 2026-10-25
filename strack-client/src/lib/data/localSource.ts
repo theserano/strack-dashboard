@@ -137,6 +137,7 @@ function query<T extends object>(items: T[], p: ListParams = {}): ListResult<T> 
     );
   }
   if (p.customerId) rows = rows.filter((r) => (r as { customerId?: string }).customerId === p.customerId);
+  if (p.paymentLinkId) rows = rows.filter((r) => (r as { paymentLinkId?: string }).paymentLinkId === p.paymentLinkId);
   if (p.status) rows = rows.filter((r) => (r as { status?: string }).status === p.status);
   if (p.type) rows = rows.filter((r) => (r as { type?: string }).type === p.type);
   if (p.from) {
@@ -336,14 +337,106 @@ const customersSource: DataSource['customers'] = {
   },
 };
 
-const links = crud<PaymentLink, Omit<PaymentLink, 'id' | 'createdAt' | 'slug'>>(
+const linksCrud = crud<PaymentLink, Omit<PaymentLink, 'id' | 'createdAt' | 'slug'>>(
   'paymentLinks', 'lnk', 'payment link', (l) => l.title,
-  (i) => ({ ...i, slug: `${i.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(36).slice(2, 6)}`, createdAt: nowIso() }),
+  (i) => ({ ...i, slug: uniqueSlug(i.title), createdAt: nowIso() }),
   {
     onRemove: (id) =>
       save('transactions', load('transactions').map((t) => (t.paymentLinkId === id ? { ...t, paymentLinkId: undefined } : t))),
   }
 );
+
+/** Same as the server: lowercase title, a-z0-9 and dashes, max 40 chars, plus a random suffix; unique. */
+const uniqueSlug = (title: string): string => {
+  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'link';
+  const taken = new Set(load('paymentLinks').map((l) => l.slug));
+  for (;;) {
+    const slug = `${base}-${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}`;
+    if (!taken.has(slug)) return slug;
+  }
+};
+
+/** Largest amount accepted, in kobo (same as the server). */
+const MAX_AMOUNT = 100_000_000_000;
+const LINK_KEYS = ['title', 'amount', 'description', 'status'];
+
+const checkAmount = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) fail('Enter a valid amount');
+  if ((v as number) > MAX_AMOUNT) fail('Amount is too large');
+  return v as number;
+};
+
+/** Mirrors the server rules: strict keys, trimmed title (1-100), description (max 500), integer kobo amount. */
+const cleanLink = (input: Record<string, unknown>, partial: boolean) => {
+  if (Object.keys(input).some((k) => !LINK_KEYS.includes(k))) fail('Unrecognized key');
+  const out: Record<string, unknown> = {};
+  if (input.title !== undefined || !partial) {
+    const t = typeof input.title === 'string' ? input.title.trim() : '';
+    if (!t) fail('Title is required');
+    if (t.length > 100) fail('Title must be at most 100 characters');
+    out.title = t;
+  }
+  if (input.description !== undefined) {
+    const d = typeof input.description === 'string' ? input.description.trim() : fail('Invalid description');
+    if (d.length > 500) fail('Must be at most 500 characters');
+    out.description = d;
+  }
+  if (input.status !== undefined) {
+    if (input.status !== 'active' && input.status !== 'disabled') fail('Invalid status');
+    out.status = input.status;
+  } else if (!partial) out.status = 'active';
+  // null (update only) turns the link into an open-amount link.
+  if (input.amount === null && partial) out.amount = undefined;
+  else if (input.amount !== undefined) out.amount = checkAmount(input.amount);
+  return out;
+};
+
+const linksSource: DataSource['paymentLinks'] = {
+  ...linksCrud,
+  // Search covers title and description only (like the server).
+  list: async (p) => {
+    const s = p?.search?.trim().toLowerCase();
+    const rows = s
+      ? load('paymentLinks').filter((l) => [l.title, l.description].some((v) => v?.toLowerCase().includes(s)))
+      : load('paymentLinks');
+    return query(rows, { ...p, search: undefined });
+  },
+  create: async (input) => linksCrud.create(cleanLink(input as Record<string, unknown>, false) as typeof input),
+  update: async (id, input) => {
+    findOrFail(load('paymentLinks'), id, 'Payment link');
+    return linksCrud.update(id, cleanLink(input as Record<string, unknown>, true) as typeof input);
+  },
+  // Same order and codes as the server: 404 link, 409 disabled, 400 amount, 404 customer.
+  simulatePayment: async (id, input) => {
+    const link = findOrFail(load('paymentLinks'), id, 'Payment link');
+    if (link.status !== 'active') fail('This payment link is disabled', 409);
+    let amount: number;
+    if (link.amount !== undefined) {
+      if (input?.amount !== undefined && input.amount !== link.amount) fail('Amount does not match this payment link');
+      amount = link.amount;
+    } else {
+      if (input?.amount === undefined) fail('Enter a valid amount');
+      amount = checkAmount(input?.amount);
+    }
+    const customerId = input?.customerId || undefined;
+    if (customerId) findOrFail(load('customers'), customerId, 'Customer');
+    const txn: Transaction = {
+      id: newId('txn'),
+      type: 'credit',
+      amount,
+      status: 'successful',
+      reference: newRef('TXN'),
+      channel: 'payment_link',
+      description: `Payment for ${link.title}`,
+      date: nowIso(),
+      customerId,
+      paymentLinkId: id,
+    };
+    save('transactions', [...load('transactions'), txn]);
+    logActivity('create', 'transaction', txn.id, `Received payment for ${link.title}`);
+    return txn;
+  },
+};
 
 const accounts = crud<BankAccount, Omit<BankAccount, 'id'>>(
   'bankAccounts', 'bnk', 'bank account', (b) => `${b.bankName} ${b.accountNumber}`, (i) => i,
@@ -362,11 +455,6 @@ const keepSingleDefault = (defaultId?: Id) => {
   save('bankAccounts', all.map((a) => ({ ...a, isDefault: a.id === id })));
 };
 
-const guessCustomerName = () => {
-  const n = load('customers').length + 1;
-  return { name: `New Customer ${n}`, email: `customer${n}@example.com` };
-};
-
 const updateTransaction = (id: Id, patch: Partial<Transaction>, description: string): Transaction => {
   const all = load('transactions');
   const item = { ...findOrFail(all, id, 'Transaction'), ...patch };
@@ -377,33 +465,7 @@ const updateTransaction = (id: Id, patch: Partial<Transaction>, description: str
 
 export const localSource: DataSource = {
   customers: customersSource,
-  paymentLinks: {
-    ...links,
-    simulatePayment: async (id, input) => {
-      const link = findOrFail(load('paymentLinks'), id, 'Payment link');
-      if (link.status !== 'active') fail('This payment link is disabled');
-      const amount = input?.amount ?? link.amount;
-      if (!Number.isInteger(amount) || (amount as number) <= 0) fail('Enter a valid amount');
-      let customerId = input?.customerId;
-      if (customerId) findOrFail(load('customers'), customerId, 'Customer');
-      else customerId = (await customers.create({ ...guessCustomerName() })).id;
-      const txn: Transaction = {
-        id: newId('txn'),
-        type: 'credit',
-        amount: amount as number,
-        status: 'successful',
-        reference: newRef('TXN'),
-        channel: 'card',
-        description: `Payment for ${link.title}`,
-        date: nowIso(),
-        customerId,
-        paymentLinkId: id,
-      };
-      save('transactions', [...load('transactions'), txn]);
-      logActivity('create', 'transaction', txn.id, `Received payment for ${link.title}`);
-      return txn;
-    },
-  },
+  paymentLinks: linksSource,
   transactions: {
     list: async (p) => query(load('transactions'), p),
     get: async (id) => findOrFail(load('transactions'), id, 'Transaction'),
